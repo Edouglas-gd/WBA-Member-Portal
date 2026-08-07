@@ -1,0 +1,17 @@
+{
+    "name": "WBA Test App",
+    "short_name": "WBA Test",
+    "start_url": ".",
+    "display": "standalone",
+    "background_color": "#f4f4f4",
+    "theme_color": "#222222",
+    "description": "A test Progressive Web App for the Working Beauceron Association.",
+
+    "icons": [
+        {
+            "src": "images/wba-icon.png",
+            "sizes": "512x512",
+            "type": "image/png"
+        }
+    ]
+}

@@ -1,0 +1,60 @@
+body {
+    font-family: Arial, sans-serif;
+    margin: 0;
+    background-color: #f4f4f4;
+    color: #222;
+}
+
+.app-header {
+    background-color: #222;
+    color: white;
+    text-align: center;
+    padding: 20px;
+}
+
+.app-header h1 {
+    margin: 0;
+    font-size: 24px;
+}
+
+.app-content {
+    max-width: 600px;
+    margin: 0 auto;
+    padding: 30px 20px;
+}
+
+.welcome-card {
+    background-color: white;
+    border-radius: 12px;
+    padding: 30px;
+    text-align: center;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.welcome-card h2 {
+    margin-top: 0;
+}
+
+.welcome-card p {
+    font-size: 17px;
+    line-height: 1.5;
+}
+
+#testButton {
+    background-color: #222;
+    color: white;
+    border: none;
+    border-radius: 8px;
+    padding: 12px 24px;
+    font-size: 16px;
+    cursor: pointer;
+}
+
+#testButton:hover {
+    opacity: 0.8;
+}
+
+#message {
+    font-weight: bold;
+    margin-top: 20px;
+}
