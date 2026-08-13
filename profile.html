@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>My Profile - WBA Member Portal</title>
+
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+
+    <meta
+        name="theme-color"
+        content="#ffffff"
+    >
+</head>
+
+
+<body>
+
+    <header class="app-header">
+
+        <img
+            src="images/wba-icon.png"
+            alt="Working Beauceron Association"
+            class="app-logo"
+        >
+
+        <h1>WBA Member Portal</h1>
+
+    </header>
+
+
+    <main class="app-content">
+
+        <section
+            class="profile-page"
+            id="memberProfile"
+        >
+
+            <!-- Profile Header -->
+
+            <div class="profile-header">
+
+                <img
+                    id="profilePhoto"
+                    class="profile-photo-image"
+                    alt="Profile photo"
+                    style="display: none;"
+                >
+
+                <div
+                    class="profile-photo-placeholder"
+                    id="profilePhotoPlaceholder"
+                >
+                    <span id="profileInitials"></span>
+                </div>
+
+
+                <div class="profile-heading">
+
+                    <h2 id="profileDisplayName">
+                        Member Profile
+                    </h2>
+
+                    <p
+                        class="profile-location"
+                        id="profileLocation"
+                    ></p>
+
+                    <div
+                        class="profile-badges"
+                        id="profileBadges"
+                    ></div>
+
+                </div>
+
+            </div>
+
+
+            <div class="profile-actions">
+
+                <a
+                    href="edit-profile.html"
+                    class="profile-action-button"
+                    id="editProfileButton"
+                >
+                    Edit Profile
+                </a>
+
+            </div>
+
+
+            <!-- WBA Roles -->
+
+            <section class="profile-section">
+
+                <h3>WBA Roles</h3>
+
+                <div id="wbaRoles">
+
+                    <p class="profile-muted">
+                        No current WBA roles.
+                    </p>
+
+                </div>
+
+            </section>
+
+
+            <!-- About -->
+
+            <section class="profile-section">
+
+                <h3>About</h3>
+
+                <p
+                    id="profileAbout"
+                    class="profile-muted"
+                >
+                    This member has not added an About section yet.
+                </p>
+
+            </section>
+
+
+            <!-- Membership -->
+
+            <section class="profile-section">
+
+                <h3>WBA Membership</h3>
+
+                <div class="profile-details-grid">
+
+                    <div class="profile-detail">
+
+                        <span class="profile-detail-label">
+                            Status
+                        </span>
+
+                        <span id="membershipStatus">
+                            No Membership
+                        </span>
+
+                    </div>
+
+
+                    <div class="profile-detail">
+
+                        <span class="profile-detail-label">
+                            Membership Type
+                        </span>
+
+                        <span id="membershipType">
+                            —
+                        </span>
+
+                    </div>
+
+
+                    <div class="profile-detail">
+
+                        <span class="profile-detail-label">
+                            Member Number
+                        </span>
+
+                        <span id="memberNumber">
+                            —
+                        </span>
+
+                    </div>
+
+
+                    <div class="profile-detail">
+
+                        <span class="profile-detail-label">
+                            Member Since
+                        </span>
+
+                        <span id="memberSince">
+                            —
+                        </span>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- Contact -->
+
+            <section class="profile-section">
+
+                <h3>Contact & Location</h3>
+
+                <div class="profile-details-grid">
+
+                    <div class="profile-detail">
+
+                        <span class="profile-detail-label">
+                            Email
+                        </span>
+
+                        <span id="profileEmail">
+                            —
+                        </span>
+
+                    </div>
+
+
+                    <div class="profile-detail">
+
+                        <span class="profile-detail-label">
+                            Phone
+                        </span>
+
+                        <span id="profilePhone">
+                            —
+                        </span>
+
+                    </div>
+
+
+                    <div class="profile-detail">
+
+                        <span class="profile-detail-label">
+                            Location
+                        </span>
+
+                        <span id="profileFullLocation">
+                            —
+                        </span>
+
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- Dogs - Future -->
+
+            <section class="profile-section">
+
+                <h3>Dogs</h3>
+
+                <p class="profile-muted">
+                    Dogs connected to this member will appear here in a future version.
+                </p>
+
+            </section>
+
+
+            <p
+                id="profileMessage"
+                role="alert"
+            ></p>
+
+
+            <div class="profile-footer-actions">
+
+                <button
+                    type="button"
+                    id="logoutButton"
+                >
+                    Log Out
+                </button>
+
+            </div>
+
+        </section>
+
+    </main>
+
+
+    <script
+        type="module"
+        src="app.js"
+    ></script>
+
+</body>
+
+</html>

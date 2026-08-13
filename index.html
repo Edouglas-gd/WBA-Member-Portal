@@ -1,40 +1,57 @@
 <!DOCTYPE html>
+
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    
-    <title>WBA Test App</title>
 
-    <link rel="stylesheet" href="style.css">
-    <link rel="manifest" href="manifest.json">
+
+<title>WBA Member Portal</title>
+
+<link rel="stylesheet" href="style.css">
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#ffffff">
+
+
 </head>
 
 <body>
 
-    <header class="app-header">
-        <h1>WBA Test App</h1>
-    </header>
 
-    <main class="app-content">
+<header class="app-header">
+    <img src="images/wba-icon.png" alt="Working Beauceron Association" class="app-logo">
+    <h1>WBA Member Portal</h1>
+</header>
 
-        <section class="welcome-card">
+<main class="app-content">
 
-            <h2>Working Beauceron Association</h2>
+    <section class="welcome-card">
 
-            <p>
-                Welcome to my first Progressive Web App!
-            </p>
+        <h2>Working Beauceron Association</h2>
 
-            <button id="testButton">Test Button</button>
+        <p>
+            Welcome to the WBA Member Portal.
+        </p>
 
-            <p id="message"></p>
+        <p>
+            Members can log in to access their account and WBA resources.
+        </p>
 
-        </section>
+        <div class="auth-buttons">
+            <button id="loginButton">Log In</button>
+            <button id="createAccountButton">Create an Account</button>
+        </div>
 
-    </main>
+        <p id="message"></p>
 
-    <script src="app.js"></script>
+    </section>
+
+</main>
+
+
+<script type="module" src="app.js"></script>
+
+
 
 </body>
 </html>

@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Edit Profile - WBA Member Portal</title>
+
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+
+    <meta
+        name="theme-color"
+        content="#ffffff"
+    >
+</head>
+
+
+<body>
+
+    <header class="app-header">
+
+        <img
+            src="images/wba-icon.png"
+            alt="Working Beauceron Association"
+            class="app-logo"
+        >
+
+        <h1>Edit Profile</h1>
+
+    </header>
+
+
+    <main class="app-content">
+
+        <section class="welcome-card">
+
+            <h2>Profile Settings</h2>
+
+            <p>
+                Update the information connected to your WBA Member Portal profile.
+            </p>
+
+
+            <form id="editProfileForm">
+
+                <h3>Profile Photo</h3>
+
+<div class="profile-photo-editor">
+
+    <div class="profile-photo-preview">
+
+        <img
+            id="editProfilePhoto"
+            class="profile-photo-image"
+            alt="Profile photo"
+            style="display: none;"
+        >
+
+        <div
+            id="editProfilePhotoPlaceholder"
+            class="profile-photo-placeholder"
+        >
+            <span id="editProfileInitials">
+                WBA
+            </span>
+        </div>
+
+    </div>
+
+
+    <label for="profilePhotoInput">
+        Choose a Profile Photo
+    </label>
+
+    <input
+        type="file"
+        id="profilePhotoInput"
+        accept="image/*"
+    >
+
+
+    <p class="profile-muted">
+        Choose an image smaller than 5 MB.
+    </p>
+
+
+    <div class="profile-photo-actions">
+
+        <button
+            type="button"
+            id="removeProfilePhotoButton"
+            style="display: none;"
+        >
+            Remove Photo
+        </button>
+
+    </div>
+
+
+    <p
+        id="profilePhotoMessage"
+        role="alert"
+    ></p>
+
+</div>
+
+
+
+                <h3>Personal Information</h3>
+
+
+                <label for="firstName">
+                    First Name
+                </label>
+
+                <input
+                    type="text"
+                    id="firstName"
+                    required
+                >
+
+
+                <label for="lastName">
+                    Last Name
+                </label>
+
+                <input
+                    type="text"
+                    id="lastName"
+                    required
+                >
+
+
+                <label for="preferredName">
+                    Preferred Name
+                </label>
+
+                <input
+                    type="text"
+                    id="preferredName"
+                >
+
+
+                <label for="email">
+                    Email Address
+                </label>
+
+                <input
+                    type="email"
+                    id="email"
+                    readonly
+                >
+
+
+                <label for="phone">
+                    Phone Number
+                </label>
+
+                <input
+                    type="tel"
+                    id="phone"
+                    autocomplete="tel"
+                >
+
+
+                <h3>Address</h3>
+
+
+                <label for="address">
+                    Street Address
+                </label>
+
+                <input
+                    type="text"
+                    id="address"
+                    autocomplete="street-address"
+                >
+
+
+                <label for="city">
+                    City
+                </label>
+
+                <input
+                    type="text"
+                    id="city"
+                    autocomplete="address-level2"
+                >
+
+
+                <label for="state">
+                    State / Province
+                </label>
+
+                <input
+                    type="text"
+                    id="state"
+                    autocomplete="address-level1"
+                >
+
+
+                <label for="zip">
+                    ZIP / Postal Code
+                </label>
+
+                <input
+                    type="text"
+                    id="zip"
+                    autocomplete="postal-code"
+                >
+
+
+                <label for="country">
+                    Country
+                </label>
+
+                <input
+                    type="text"
+                    id="country"
+                    autocomplete="country-name"
+                >
+
+                <h3>Profile Privacy</h3>
+
+<p>
+    Choose what other WBA members can see on your profile.
+    WBA Administrators will still have access to required
+    membership contact information.
+</p>
+
+
+<label for="emailVisibility">
+    Email Address
+</label>
+
+<select id="emailVisibility">
+    <option value="members">Visible to Members</option>
+    <option value="private">Private</option>
+</select>
+
+
+<label for="phoneVisibility">
+    Phone Number
+</label>
+
+<select id="phoneVisibility">
+    <option value="members">Visible to Members</option>
+    <option value="private">Private</option>
+</select>
+
+
+<label for="locationVisibility">
+    Location
+</label>
+
+<select id="locationVisibility">
+
+    <option value="full">
+        Full Address
+    </option>
+
+    <option value="cityState">
+        City & State / Province
+    </option>
+
+    <option value="state">
+        State / Province Only
+    </option>
+
+    <option value="country">
+        Country Only
+    </option>
+
+    <option value="private">
+        Private
+    </option>
+
+</select>
+
+
+<label for="aboutVisibility">
+    About Section
+</label>
+
+<select id="aboutVisibility">
+    <option value="members">Visible to Members</option>
+    <option value="private">Private</option>
+</select>
+
+
+
+
+                <h3>About</h3>
+
+
+                <label for="about">
+                    About Me
+                </label>
+
+                <textarea
+                    id="about"
+                    rows="6"
+                    maxlength="1000"
+                    placeholder="Share a little about yourself, your Beaucerons, interests, or involvement with the WBA."
+                ></textarea>
+
+
+                <button type="submit">
+                    Save Changes
+                </button>
+
+            </form>
+
+
+            <p
+                id="editProfileMessage"
+                role="alert"
+            ></p>
+
+
+            <p>
+                <a href="profile.html">
+                    Cancel and Return to My Profile
+                </a>
+            </p>
+
+        </section>
+
+    </main>
+
+
+    <script
+        type="module"
+        src="app.js"
+    ></script>
+
+</body>
+
+</html>

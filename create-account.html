@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Create Account - WBA Member Portal</title>
+
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+
+<body>
+
+    <header class="app-header">
+        <img src="images/wba-icon.png"
+             alt="Working Beauceron Association"
+             class="app-logo">
+
+        <h1>WBA Member Portal</h1>
+    </header>
+
+    <main class="app-content">
+
+        <section class="welcome-card">
+
+            <h2>Create Your Account</h2>
+
+            <p>
+                Create an account to access the WBA Member Portal.
+            </p>
+
+            <form id="createAccountForm">
+
+                <label for="email">Email Address</label>
+                <input
+                    type="email"
+                    id="email"
+                    name="email"
+                    autocomplete="email"
+                    required
+                >
+
+                <label for="password">Password</label>
+                <input
+                    type="password"
+                    id="password"
+                    name="password"
+                    autocomplete="new-password"
+                    required
+                >
+
+                <label for="confirmPassword">Confirm Password</label>
+                <input
+                    type="password"
+                    id="confirmPassword"
+                    name="confirmPassword"
+                    autocomplete="new-password"
+                    required
+                >
+
+                <button type="submit">Create Account</button>
+
+            </form>
+
+            <div id="message" role="alert"></div>
+
+            <p>
+                Already have an account?
+                <a href="login.html">Log In</a>
+            </p>
+
+            <p>
+                <a href="index.html">Return to WBA Member Portal</a>
+            </p>
+
+        </section>
+
+    </main>
+
+    <script type="module" src="app.js"></script>
+
+</body>
+</html>
