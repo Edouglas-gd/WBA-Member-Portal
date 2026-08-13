@@ -86,9 +86,17 @@
             <div class="profile-actions">
 
                 <a
+                    href="members.html"
+                    class="profile-action-button"
+                >
+                    Member Lookup
+                </a>
+
+                <a
                     href="edit-profile.html"
                     class="profile-action-button"
                     id="editProfileButton"
+                    style="display: none;"
                 >
                     Edit Profile
                 </a>
@@ -102,7 +110,10 @@
 
                 <h3>WBA Roles</h3>
 
-                <div id="wbaRoles">
+                <div
+                    id="wbaRoles"
+                    class="profile-badges"
+                >
 
                     <p class="profile-muted">
                         No current WBA roles.
@@ -166,10 +177,10 @@
                     <div class="profile-detail">
 
                         <span class="profile-detail-label">
-                            Member Number
+                            Member ID
                         </span>
 
-                        <span id="memberNumber">
+                        <span id="memberId">
                             —
                         </span>
 
@@ -183,6 +194,19 @@
                         </span>
 
                         <span id="memberSince">
+                            —
+                        </span>
+
+                    </div>
+
+
+                    <div class="profile-detail">
+
+                        <span class="profile-detail-label">
+                            Membership Current Through
+                        </span>
+
+                        <span id="membershipCurrentThrough">
                             —
                         </span>
 

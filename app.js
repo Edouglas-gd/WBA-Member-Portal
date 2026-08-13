@@ -26,7 +26,10 @@ import {
     doc,
     setDoc,
     getDoc,
-    deleteField
+    collection,
+    getDocs,
+    deleteField,
+    writeBatch
 } from "https://www.gstatic.com/firebasejs/12.17.1/firebase-firestore.js";
 
 
@@ -430,6 +433,666 @@ if (forgotPasswordLink) {
 
 console.log("WBA Member Portal loaded.");
 
+
+// ------------------------------------
+// Member-Readable Profile Data
+// ------------------------------------
+
+const buildDisplayLocation =
+    (profileData, visibility) => {
+
+        const locationParts = {
+            full: [
+                profileData.address,
+                profileData.city,
+                profileData.state,
+                profileData.zip,
+                profileData.country
+            ],
+            cityState: [
+                profileData.city,
+                profileData.state
+            ],
+            state: [
+                profileData.state
+            ],
+            country: [
+                profileData.country
+            ]
+        };
+
+        const selectedParts =
+            locationParts[visibility];
+
+
+        if (!selectedParts) {
+            return "";
+        }
+
+
+        return selectedParts
+            .filter(Boolean)
+            .join(", ");
+
+    };
+
+
+const buildMemberProfileData =
+    (uid, sourceData) => {
+
+        const privacy =
+            sourceData.privacy || {};
+
+        const firstName =
+            sourceData.firstName || "";
+
+        const lastName =
+            sourceData.lastName || "";
+
+        const preferredName =
+            sourceData.preferredName || "";
+
+        const locationVisibility =
+            privacy.location || "state";
+
+        const memberProfileData = {
+            uid,
+            firstName,
+            lastName,
+            preferredName,
+            displayName:
+                `${preferredName || firstName} ${lastName}`
+                    .trim(),
+            locationVisibility,
+            aboutVisibility:
+                privacy.about || "members",
+            wbaRoles:
+                Array.isArray(sourceData.wbaRoles)
+                    ? sourceData.wbaRoles
+                        .map((role) =>
+                            typeof role === "string"
+                                ? role
+                                : role?.name
+                        )
+                        .filter(Boolean)
+                    : [],
+            membershipStatus:
+                sourceData.membershipStatus ||
+                "No Membership",
+            updatedAt:
+                sourceData.updatedAt ||
+                new Date().toISOString()
+        };
+
+        const copyIfPresent =
+            (fieldName, value) => {
+
+                if (
+                    value !== undefined &&
+                    value !== null &&
+                    value !== ""
+                ) {
+
+                    memberProfileData[fieldName] =
+                        value;
+
+                }
+
+            };
+
+
+        copyIfPresent(
+            "profilePhotoPath",
+            sourceData.profilePhotoPath
+        );
+
+        copyIfPresent(
+            "profilePhotoUpdatedAt",
+            sourceData.profilePhotoUpdatedAt
+        );
+
+        copyIfPresent(
+            "memberId",
+            sourceData.memberId ||
+            sourceData.memberNumber
+        );
+
+        copyIfPresent(
+            "membershipType",
+            sourceData.membershipType
+        );
+
+        copyIfPresent(
+            "membershipStartDate",
+            sourceData.membershipStartDate ||
+            sourceData.memberSince
+        );
+
+        copyIfPresent(
+            "membershipCurrentThrough",
+            sourceData.membershipCurrentThrough ||
+            sourceData.renewalDate
+        );
+
+
+        if (privacy.email === "members") {
+
+            copyIfPresent(
+                "email",
+                sourceData.email
+            );
+
+        }
+
+
+        if (privacy.phone === "members") {
+
+            copyIfPresent(
+                "phone",
+                sourceData.phone
+            );
+
+        }
+
+
+        if (privacy.about === "members") {
+
+            copyIfPresent(
+                "about",
+                sourceData.about
+            );
+
+        }
+
+
+        const displayLocation =
+            buildDisplayLocation(
+                sourceData,
+                locationVisibility
+            );
+
+
+        copyIfPresent(
+            "location",
+            displayLocation
+        );
+
+
+        return memberProfileData;
+
+    };
+
+
+// ------------------------------------
+// Member Lookup
+// ------------------------------------
+
+const memberDirectory =
+    document.getElementById(
+        "memberDirectory"
+    );
+
+
+if (memberDirectory) {
+
+    const memberSearchInput =
+        document.getElementById(
+            "memberSearchInput"
+        );
+
+    const memberResults =
+        document.getElementById(
+            "memberResults"
+        );
+
+    const memberDirectoryMessage =
+        document.getElementById(
+            "memberDirectoryMessage"
+        );
+
+    let directoryMembers = [];
+
+
+    const getMemberInitials =
+        (memberData) => {
+
+            return `${(memberData.firstName || "").charAt(0)}${(memberData.lastName || "").charAt(0)}`
+                .toUpperCase() ||
+                "WBA";
+
+        };
+
+
+    const getMemberDisplayName =
+        (memberData) => {
+
+            return memberData.displayName ||
+                `${memberData.preferredName || memberData.firstName || ""} ${memberData.lastName || ""}`
+                    .trim() ||
+                "WBA Member";
+
+        };
+
+
+    const loadMemberPhoto =
+        async (
+            memberData,
+            photoImage,
+            photoPlaceholder
+        ) => {
+
+            if (!memberData.profilePhotoPath) {
+                return;
+            }
+
+
+            try {
+
+                const photoRef =
+                    ref(
+                        storage,
+                        memberData.profilePhotoPath
+                    );
+
+                const photoURL =
+                    new URL(
+                        await getDownloadURL(photoRef)
+                    );
+
+
+                if (memberData.profilePhotoUpdatedAt) {
+
+                    photoURL.searchParams.set(
+                        "updatedAt",
+                        memberData.profilePhotoUpdatedAt
+                    );
+
+                }
+
+
+                photoImage.onerror = () => {
+
+                    photoImage.style.display =
+                        "none";
+
+                    photoPlaceholder.style.display =
+                        "flex";
+
+                };
+
+                photoImage.src =
+                    photoURL.toString();
+
+                photoImage.style.display =
+                    "block";
+
+                photoPlaceholder.style.display =
+                    "none";
+
+            } catch (error) {
+
+                console.error(
+                    "Member directory photo could not be loaded.",
+                    error
+                );
+
+            }
+
+        };
+
+
+    const renderMemberCard =
+        (memberData) => {
+
+            const memberCard =
+                document.createElement("a");
+
+            memberCard.className =
+                "member-card";
+
+            memberCard.href =
+                `profile.html?id=${encodeURIComponent(memberData.uid)}`;
+
+
+            const photoContainer =
+                document.createElement("div");
+
+            photoContainer.className =
+                "member-card-photo";
+
+            const photoImage =
+                document.createElement("img");
+
+            photoImage.className =
+                "member-card-photo-image";
+
+            photoImage.alt =
+                `${getMemberDisplayName(memberData)} profile photo`;
+
+            photoImage.style.display =
+                "none";
+
+            const photoPlaceholder =
+                document.createElement("div");
+
+            photoPlaceholder.className =
+                "member-card-photo-placeholder";
+
+            photoPlaceholder.textContent =
+                getMemberInitials(memberData);
+
+            photoContainer.append(
+                photoImage,
+                photoPlaceholder
+            );
+
+
+            const memberDetails =
+                document.createElement("div");
+
+            memberDetails.className =
+                "member-card-details";
+
+            const memberName =
+                document.createElement("h2");
+
+            memberName.textContent =
+                getMemberDisplayName(memberData);
+
+            memberDetails.appendChild(
+                memberName
+            );
+
+
+            if (memberData.location) {
+
+                const memberLocation =
+                    document.createElement("p");
+
+                memberLocation.className =
+                    "member-card-location";
+
+                memberLocation.textContent =
+                    memberData.location;
+
+                memberDetails.appendChild(
+                    memberLocation
+                );
+
+            }
+
+
+            const membershipLabel =
+                memberData.membershipType ||
+                memberData.membershipStatus;
+
+
+            if (membershipLabel) {
+
+                const memberMembership =
+                    document.createElement("p");
+
+                memberMembership.className =
+                    "member-card-membership";
+
+                memberMembership.textContent =
+                    membershipLabel;
+
+                memberDetails.appendChild(
+                    memberMembership
+                );
+
+            }
+
+
+            if (
+                Array.isArray(memberData.wbaRoles) &&
+                memberData.wbaRoles.length > 0
+            ) {
+
+                const roleList =
+                    document.createElement("div");
+
+                roleList.className =
+                    "profile-badges";
+
+
+                memberData.wbaRoles.forEach((role) => {
+
+                    const roleName =
+                        typeof role === "string"
+                            ? role
+                            : role?.name;
+
+
+                    if (!roleName) {
+                        return;
+                    }
+
+
+                    const roleBadge =
+                        document.createElement("span");
+
+                    roleBadge.className =
+                        "profile-role-badge";
+
+                    roleBadge.textContent =
+                        roleName;
+
+                    roleList.appendChild(
+                        roleBadge
+                    );
+
+                });
+
+
+                if (roleList.children.length > 0) {
+
+                    memberDetails.appendChild(
+                        roleList
+                    );
+
+                }
+
+            }
+
+
+            const viewProfileLabel =
+                document.createElement("span");
+
+            viewProfileLabel.className =
+                "member-card-action";
+
+            viewProfileLabel.textContent =
+                "View Profile";
+
+            memberDetails.appendChild(
+                viewProfileLabel
+            );
+
+            memberCard.append(
+                photoContainer,
+                memberDetails
+            );
+
+            loadMemberPhoto(
+                memberData,
+                photoImage,
+                photoPlaceholder
+            );
+
+
+            return memberCard;
+
+        };
+
+
+    const renderMemberDirectory =
+        (members, hasSearchQuery = false) => {
+
+            memberResults.replaceChildren();
+
+
+            if (members.length === 0) {
+
+                memberDirectoryMessage.textContent =
+                    hasSearchQuery
+                        ? "No members match your search."
+                        : "No members are available yet.";
+
+                return;
+
+            }
+
+
+            memberDirectoryMessage.textContent =
+                "";
+
+
+            members.forEach((memberData) => {
+
+                memberResults.appendChild(
+                    renderMemberCard(memberData)
+                );
+
+            });
+
+        };
+
+
+    const filterMembers =
+        (searchQuery) => {
+
+            const normalizedQuery =
+                searchQuery
+                    .trim()
+                    .toLocaleLowerCase();
+
+
+            if (!normalizedQuery) {
+                return directoryMembers;
+            }
+
+
+            return directoryMembers.filter(
+                (memberData) => {
+
+                    const searchableNames = [
+                        memberData.displayName,
+                        memberData.firstName,
+                        memberData.lastName,
+                        memberData.preferredName
+                    ]
+                        .filter(Boolean)
+                        .join(" ")
+                        .toLocaleLowerCase();
+
+
+                    return searchableNames.includes(
+                        normalizedQuery
+                    );
+
+                }
+            );
+
+        };
+
+
+    const loadMemberDirectory =
+        async () => {
+
+            memberDirectoryMessage.textContent =
+                "Loading members...";
+
+
+            try {
+
+                const memberProfilesSnapshot =
+                    await getDocs(
+                        collection(
+                            db,
+                            "memberProfiles"
+                        )
+                    );
+
+                directoryMembers =
+                    memberProfilesSnapshot.docs
+                        .map((memberDocument) => ({
+                            ...memberDocument.data(),
+                            uid: memberDocument.id
+                        }))
+                        .sort((firstMember, secondMember) =>
+                            getMemberDisplayName(firstMember)
+                                .localeCompare(
+                                    getMemberDisplayName(secondMember),
+                                    undefined,
+                                    {
+                                        sensitivity: "base"
+                                    }
+                                )
+                        );
+
+
+                renderMemberDirectory(
+                    directoryMembers
+                );
+
+            } catch (error) {
+
+                console.error(error);
+
+                memberResults.replaceChildren();
+
+                memberDirectoryMessage.textContent =
+                    "We couldn't load the member directory. Please try again.";
+
+            }
+
+        };
+
+
+    memberSearchInput.addEventListener(
+        "input",
+        () => {
+
+            const searchQuery =
+                memberSearchInput.value;
+
+
+            renderMemberDirectory(
+                filterMembers(searchQuery),
+                Boolean(searchQuery.trim())
+            );
+
+        }
+    );
+
+
+    onAuthStateChanged(
+        auth,
+        async (authenticatedUser) => {
+
+            if (
+                !authenticatedUser ||
+                !authenticatedUser.emailVerified
+            ) {
+
+                window.location.href =
+                    "login.html";
+
+                return;
+
+            }
+
+
+            await loadMemberDirectory();
+
+        }
+    );
+
+}
+
+
 // ------------------------------------
 // Member Profile
 // ------------------------------------
@@ -447,22 +1110,17 @@ if (memberProfile) {
     const profileMessage =
         document.getElementById("profileMessage");
 
+    const editProfileButton =
+        document.getElementById(
+            "editProfileButton"
+        );
+
 
     onAuthStateChanged(
         auth,
-        async (user) => {
+        async (authenticatedUser) => {
 
-            if (!user) {
-
-                window.location.href =
-                    "login.html";
-
-                return;
-
-            }
-
-
-            if (!user.emailVerified) {
+            if (!authenticatedUser) {
 
                 window.location.href =
                     "login.html";
@@ -472,44 +1130,78 @@ if (memberProfile) {
             }
 
 
-            const userRef =
-                doc(db, "users", user.uid);
+            if (!authenticatedUser.emailVerified) {
+
+                window.location.href =
+                    "login.html";
+
+                return;
+
+            }
+
+
+            const requestedProfileOwnerId =
+                new URLSearchParams(
+                    window.location.search
+                )
+                    .get("id")
+                    ?.trim();
+
+            const profileOwnerId =
+                requestedProfileOwnerId ||
+                authenticatedUser.uid;
+
+            const isOwner =
+                profileOwnerId ===
+                authenticatedUser.uid;
+
+
+            editProfileButton.style.display =
+                isOwner
+                    ? "inline-block"
+                    : "none";
 
 
             try {
 
-                const userSnapshot =
-                    await getDoc(userRef);
+                const profileOwnerRef =
+                    doc(
+                        db,
+                        isOwner
+                            ? "users"
+                            : "memberProfiles",
+                        profileOwnerId
+                    );
+
+                const profileOwnerSnapshot =
+                    await getDoc(profileOwnerRef);
 
 
-                if (!userSnapshot.exists()) {
+                if (!profileOwnerSnapshot.exists()) {
 
                     profileMessage.textContent =
-                        "We couldn't find your profile.";
+                        "We couldn't find this member profile.";
 
                     return;
 
                 }
 
 
-                const userData =
-                    userSnapshot.data();
-
-                const privacy =
-                    userData.privacy || {};
+                const profileOwnerData =
+                    profileOwnerSnapshot.data();
 
                 // -------------------------
                 // Name
                 // -------------------------
 
                 const firstName =
-                    userData.firstName || "";
+                    profileOwnerData.firstName || "";
 
                 const lastName =
-                    userData.lastName || "";
+                    profileOwnerData.lastName || "";
 
                 const preferredName =
-                    userData.preferredName || "";
+                    profileOwnerData.preferredName || "";
 
 
                 const displayFirstName =
@@ -545,7 +1237,7 @@ if (memberProfile) {
                 // Profile Photo
                 // -------------------------
 
-                if (userData.profilePhotoPath) {
+                if (profileOwnerData.profilePhotoPath) {
 
                     const profilePhoto =
                         document.getElementById(
@@ -563,7 +1255,7 @@ if (memberProfile) {
                         const photoRef =
                             ref(
                                 storage,
-                                userData.profilePhotoPath
+                                profileOwnerData.profilePhotoPath
                             );
 
                         const photoURL =
@@ -572,11 +1264,11 @@ if (memberProfile) {
                             );
 
 
-                        if (userData.profilePhotoUpdatedAt) {
+                        if (profileOwnerData.profilePhotoUpdatedAt) {
 
                             photoURL.searchParams.set(
                                 "updatedAt",
-                                userData.profilePhotoUpdatedAt
+                                profileOwnerData.profilePhotoUpdatedAt
                             );
 
                         }
@@ -624,90 +1316,19 @@ if (memberProfile) {
 // Location
 // -------------------------
 
-const address =
-    userData.address || "";
-
-const city =
-    userData.city || "";
-
-const state =
-    userData.state || "";
-
-const zip =
-    userData.zip || "";
-
-const country =
-    userData.country || "";
-
-
-const locationVisibility =
-    privacy.location || "state";
-
-
-let profileLocation = "";
-
-
-switch (locationVisibility) {
-
-    case "full":
-
-        profileLocation =
-            [
-                address,
-                city,
-                state,
-                zip,
-                country
-            ]
-                .filter(Boolean)
-                .join(", ");
-
-        break;
-
-
-    case "cityState":
-
-        profileLocation =
-            [
-                city,
-                state
-            ]
-                .filter(Boolean)
-                .join(", ");
-
-        break;
-
-
-    case "state":
-
-        profileLocation =
-            state || country;
-
-        break;
-
-
-    case "country":
-
-        profileLocation =
-            country;
-
-        break;
-
-
-    case "private":
-
-        profileLocation =
-            "Private";
-
-        break;
-
-
-    default:
-
-        profileLocation =
-            state || country;
-
-}
+const profileLocation =
+    isOwner
+        ? buildDisplayLocation(
+            profileOwnerData,
+            "full"
+        )
+        : profileOwnerData.location ||
+            (
+                profileOwnerData.locationVisibility ===
+                    "private"
+                    ? "Private"
+                    : "Not provided"
+            );
 
 
 document.getElementById(
@@ -726,19 +1347,22 @@ document.getElementById(
 // Contact
 // -------------------------
 
-const emailVisibility =
-    privacy.email || "private";
+const profileOwnerEmail =
+    profileOwnerData.email ||
+    (isOwner
+        ? authenticatedUser.email
+        : "");
 
-const phoneVisibility =
-    privacy.phone || "private";
 
-
-if (emailVisibility === "members") {
+if (
+    isOwner ||
+    profileOwnerData.email
+) {
 
     document.getElementById(
         "profileEmail"
     ).textContent =
-        user.email || "Not provided";
+        profileOwnerEmail || "Not provided";
 
 } else {
 
@@ -750,12 +1374,15 @@ if (emailVisibility === "members") {
 }
 
 
-if (phoneVisibility === "members") {
+if (
+    isOwner ||
+    profileOwnerData.phone
+) {
 
     document.getElementById(
         "profilePhone"
     ).textContent =
-        userData.phone || "Not provided";
+        profileOwnerData.phone || "Not provided";
 
 } else {
 
@@ -769,19 +1396,28 @@ if (phoneVisibility === "members") {
 // About
 // -------------------------
 
-const aboutVisibility =
-    privacy.about || "members";
-
-
 if (
-    aboutVisibility === "members" &&
-    userData.about
+    isOwner &&
+    profileOwnerData.about
 ) {
 
     document.getElementById(
         "profileAbout"
     ).textContent =
-        userData.about;
+        profileOwnerData.about;
+
+    document.getElementById(
+        "profileAbout"
+    ).classList.remove(
+        "profile-muted"
+    );
+
+} else if (profileOwnerData.about) {
+
+    document.getElementById(
+        "profileAbout"
+    ).textContent =
+        profileOwnerData.about;
 
     document.getElementById(
         "profileAbout"
@@ -790,7 +1426,9 @@ if (
     );
 
 } else if (
-    aboutVisibility === "private"
+    !isOwner &&
+    profileOwnerData.aboutVisibility ===
+        "private"
 ) {
 
     document.getElementById(
@@ -802,35 +1440,174 @@ if (
 
 
                 // -------------------------
+                // WBA Roles
+                // -------------------------
+
+                const wbaRoles =
+                    Array.isArray(profileOwnerData.wbaRoles)
+                        ? profileOwnerData.wbaRoles
+                        : [];
+
+                const wbaRolesContainer =
+                    document.getElementById(
+                        "wbaRoles"
+                    );
+
+
+                if (wbaRoles.length > 0) {
+
+                    wbaRolesContainer.replaceChildren();
+
+
+                    wbaRoles.forEach((role) => {
+
+                        const roleName =
+                            typeof role === "string"
+                                ? role
+                                : role?.name;
+
+
+                        if (!roleName) {
+                            return;
+                        }
+
+
+                        const roleBadge =
+                            document.createElement(
+                                "span"
+                            );
+
+                        roleBadge.className =
+                            "profile-role-badge";
+
+                        roleBadge.textContent =
+                            roleName;
+
+                        wbaRolesContainer.appendChild(
+                            roleBadge
+                        );
+
+                    });
+
+
+                    if (!wbaRolesContainer.children.length) {
+
+                        const noRolesMessage =
+                            document.createElement(
+                                "p"
+                            );
+
+                        noRolesMessage.className =
+                            "profile-muted";
+
+                        noRolesMessage.textContent =
+                            "No current WBA roles.";
+
+                        wbaRolesContainer.appendChild(
+                            noRolesMessage
+                        );
+
+                    }
+
+                }
+
+
+                // -------------------------
                 // Membership Information
                 // -------------------------
+
+                const formatMembershipDate =
+                    (value) => {
+
+                        if (!value) {
+                            return "—";
+                        }
+
+
+                        let date;
+
+
+                        if (
+                            typeof value === "string" &&
+                            /^\d{4}-\d{2}-\d{2}$/.test(value)
+                        ) {
+
+                            const [year, month, day] =
+                                value
+                                    .split("-")
+                                    .map(Number);
+
+                            date =
+                                new Date(
+                                    year,
+                                    month - 1,
+                                    day
+                                );
+
+                        } else {
+
+                            date =
+                                typeof value.toDate === "function"
+                                    ? value.toDate()
+                                    : new Date(value);
+
+                        }
+
+
+                        if (Number.isNaN(date.getTime())) {
+                            return String(value);
+                        }
+
+
+                        return new Intl.DateTimeFormat(
+                            undefined,
+                            {
+                                year: "numeric",
+                                month: "long",
+                                day: "numeric"
+                            }
+                        ).format(date);
+
+                    };
 
                 document.getElementById(
                     "membershipStatus"
                 ).textContent =
-                    userData.membershipStatus ||
+                    profileOwnerData.membershipStatus ||
                     "No Membership";
 
 
                 document.getElementById(
                     "membershipType"
                 ).textContent =
-                    userData.membershipType ||
+                    profileOwnerData.membershipType ||
                     "—";
 
 
                 document.getElementById(
-                    "memberNumber"
+                    "memberId"
                 ).textContent =
-                    userData.memberNumber ||
+                    profileOwnerData.memberId ||
+                    profileOwnerData.memberNumber ||
                     "—";
 
 
                 document.getElementById(
                     "memberSince"
                 ).textContent =
-                    userData.memberSince ||
-                    "—";
+                    formatMembershipDate(
+                        profileOwnerData.membershipStartDate ||
+                        profileOwnerData.memberSince
+                    );
+
+
+                document.getElementById(
+                    "membershipCurrentThrough"
+                ).textContent =
+                    formatMembershipDate(
+                        profileOwnerData.membershipCurrentThrough ||
+                        profileOwnerData.renewalDate
+                    );
 
 
                 console.log(
@@ -844,7 +1621,9 @@ if (
 
 
                 profileMessage.textContent =
-                    "We couldn't load your profile information.";
+                    isOwner
+                        ? "We couldn't load your profile information."
+                        : "We couldn't load this member profile.";
 
             }
 
@@ -1521,13 +2300,60 @@ removeProfilePhotoButton.addEventListener(
     }
 
 
-    await setDoc(
+    const profilePhotoUpdatedAt =
+        selectedPhoto
+            ? profileData.profilePhotoUpdatedAt
+            : userData.profilePhotoUpdatedAt;
+
+    const memberProfileSourceData = {
+        ...userData,
+        ...profileData,
+        email:
+            user.email ||
+            userData.email ||
+            "",
+        profilePhotoPath:
+            profilePhotoPath || null,
+        profilePhotoUpdatedAt:
+            profilePhotoPath
+                ? profilePhotoUpdatedAt
+                : null
+    };
+
+    const memberProfileData =
+        buildMemberProfileData(
+            user.uid,
+            memberProfileSourceData
+        );
+
+    const memberProfileRef =
+        doc(
+            db,
+            "memberProfiles",
+            user.uid
+        );
+
+    const profileWriteBatch =
+        writeBatch(db);
+
+
+    profileWriteBatch.set(
         userRef,
         profileData,
         {
             merge: true
         }
     );
+
+    // Replace the sanitized document so fields that
+    // are now private cannot remain from an earlier save.
+    profileWriteBatch.set(
+        memberProfileRef,
+        memberProfileData
+    );
+
+
+    await profileWriteBatch.commit();
 
 
     editProfileMessage.textContent =

@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+
+    <meta
+        name="viewport"
+        content="width=device-width, initial-scale=1.0"
+    >
+
+    <title>Member Lookup - WBA Member Portal</title>
+
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+
+    <meta
+        name="theme-color"
+        content="#ffffff"
+    >
+</head>
+
+
+<body>
+
+    <header class="app-header">
+
+        <img
+            src="images/wba-icon.png"
+            alt="Working Beauceron Association"
+            class="app-logo"
+        >
+
+        <h1>Member Lookup</h1>
+
+    </header>
+
+
+    <main class="app-content">
+
+        <section
+            class="member-directory"
+            id="memberDirectory"
+        >
+
+            <div class="member-directory-heading">
+
+                <div>
+                    <h2>Find a WBA Member</h2>
+
+                    <p>
+                        Browse the member directory or search by name.
+                    </p>
+                </div>
+
+                <a
+                    href="profile.html"
+                    class="profile-action-button"
+                >
+                    My Profile
+                </a>
+
+            </div>
+
+
+            <label for="memberSearchInput">
+                Search Members
+            </label>
+
+            <input
+                type="search"
+                id="memberSearchInput"
+                class="member-search-input"
+                placeholder="Search by name"
+                autocomplete="off"
+            >
+
+
+            <p
+                id="memberDirectoryMessage"
+                class="profile-muted"
+                role="status"
+            >
+                Loading members...
+            </p>
+
+
+            <div
+                id="memberResults"
+                class="member-results"
+            ></div>
+
+        </section>
+
+    </main>
+
+
+    <script
+        type="module"
+        src="app.js"
+    ></script>
+
+</body>
+
+</html>
