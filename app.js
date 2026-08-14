@@ -36,6 +36,75 @@ import {
 const auth = getAuth(firebaseApp);
 
 
+const DOG_SPORT_OPTIONS = [
+    { id: "scent-work", label: "Scent Work / Nose Work" },
+    { id: "igp", label: "IGP" },
+    { id: "french-ring", label: "French Ring" },
+    { id: "mondioring", label: "Mondioring" },
+    { id: "psa", label: "PSA" },
+    { id: "herding", label: "Herding" },
+    { id: "search-and-rescue", label: "Search & Rescue" },
+    { id: "tracking", label: "Tracking" },
+    { id: "mantrailing", label: "Mantrailing" },
+    { id: "joring-canicross", label: "Joring / Canicross" },
+    { id: "obedience", label: "Obedience" },
+    { id: "rally", label: "Rally" },
+    { id: "agility", label: "Agility" },
+    { id: "dock-diving", label: "Dock Diving" },
+    { id: "fast-cat-lure-coursing", label: "Fast CAT / Lure Coursing" },
+    { id: "barn-hunt", label: "Barn Hunt" },
+    { id: "disc-dog", label: "Disc Dog" },
+    { id: "flyball", label: "Flyball" },
+    { id: "weight-pull", label: "Weight Pull" },
+    { id: "conformation", label: "Conformation" },
+    { id: "service-dog-training", label: "Service Dog Training" },
+    { id: "trick-dog", label: "Trick Dog" },
+    { id: "farm-stock-work", label: "Farm / Stock Work" },
+    { id: "hunting-field-work", label: "Hunting / Field Work" }
+];
+
+const DOG_SPORT_IDS =
+    new Set(
+        DOG_SPORT_OPTIONS.map(
+            (option) => option.id
+        )
+    );
+
+const DOG_SPORT_LABELS =
+    new Map(
+        DOG_SPORT_OPTIONS.map(
+            (option) => [
+                option.id,
+                option.label
+            ]
+        )
+    );
+
+
+const isAuthorizedAdmin =
+    async (authenticatedUser) => {
+
+        if (!authenticatedUser) {
+            return false;
+        }
+
+
+        const adminAuthorizationSnapshot =
+            await getDoc(
+                doc(
+                    db,
+                    "adminUsers",
+                    authenticatedUser.uid
+                )
+            );
+
+
+        return adminAuthorizationSnapshot.exists() &&
+            adminAuthorizationSnapshot.data().active === true;
+
+    };
+
+
 // ------------------------------------
 // Landing Page
 // ------------------------------------
@@ -245,7 +314,7 @@ if (loginForm) {
 
 
                     window.location.href =
-                        "profile.html";
+                        "dashboard.html";
 
 
                     return;
@@ -259,7 +328,7 @@ if (loginForm) {
 
 
                 window.location.href =
-    "profile.html";
+                    "dashboard.html";
 
             } catch (error) {
 
@@ -477,6 +546,42 @@ const buildDisplayLocation =
     };
 
 
+const getMemberFacingStatus =
+    (membershipStatus) => {
+
+        const normalizedStatus =
+            String(membershipStatus || "")
+                .trim()
+                .toLocaleLowerCase();
+
+
+        if (normalizedStatus === "active") {
+            return "Active";
+        }
+
+
+        const inactiveStatuses = [
+            "inactive",
+            "archived",
+            "expired",
+            "lapsed",
+            "past due",
+            "resigned",
+            "suspended",
+            "expelled"
+        ];
+
+
+        if (inactiveStatuses.includes(normalizedStatus)) {
+            return "Inactive";
+        }
+
+
+        return "No Membership";
+
+    };
+
+
 const buildMemberProfileData =
     (uid, sourceData) => {
 
@@ -489,8 +594,13 @@ const buildMemberProfileData =
         const lastName =
             sourceData.lastName || "";
 
+        const preferredNameIsVisible =
+            privacy.preferredName !== "private";
+
         const preferredName =
-            sourceData.preferredName || "";
+            preferredNameIsVisible
+                ? sourceData.preferredName || ""
+                : "";
 
         const locationVisibility =
             privacy.location || "state";
@@ -499,7 +609,6 @@ const buildMemberProfileData =
             uid,
             firstName,
             lastName,
-            preferredName,
             displayName:
                 `${preferredName || firstName} ${lastName}`
                     .trim(),
@@ -517,8 +626,16 @@ const buildMemberProfileData =
                         .filter(Boolean)
                     : [],
             membershipStatus:
-                sourceData.membershipStatus ||
-                "No Membership",
+                getMemberFacingStatus(
+                    sourceData.membershipStatus
+                ),
+            dogSports:
+                Array.isArray(sourceData.dogSports)
+                    ? sourceData.dogSports.filter(
+                        (sportId) =>
+                            DOG_SPORT_IDS.has(sportId)
+                    )
+                    : [],
             updatedAt:
                 sourceData.updatedAt ||
                 new Date().toISOString()
@@ -539,6 +656,16 @@ const buildMemberProfileData =
                 }
 
             };
+
+
+        if (preferredNameIsVisible) {
+
+            copyIfPresent(
+                "preferredName",
+                preferredName
+            );
+
+        }
 
 
         copyIfPresent(
@@ -621,6 +748,526 @@ const buildMemberProfileData =
         return memberProfileData;
 
     };
+
+
+// ------------------------------------
+// Member Dashboard
+// ------------------------------------
+
+const memberDashboard =
+    document.getElementById(
+        "memberDashboard"
+    );
+
+
+if (memberDashboard) {
+
+    const dashboardMessage =
+        document.getElementById(
+            "dashboardMessage"
+        );
+
+
+    onAuthStateChanged(
+        auth,
+        async (authenticatedUser) => {
+
+            if (
+                !authenticatedUser ||
+                !authenticatedUser.emailVerified
+            ) {
+
+                window.location.href =
+                    "login.html";
+
+                return;
+
+            }
+
+
+            try {
+
+                const dashboardProfileRef =
+                    doc(
+                        db,
+                        "users",
+                        authenticatedUser.uid
+                    );
+
+                const dashboardProfileSnapshot =
+                    await getDoc(
+                        dashboardProfileRef
+                    );
+
+
+                if (!dashboardProfileSnapshot.exists()) {
+
+                    dashboardMessage.textContent =
+                        "We couldn't find your member profile.";
+
+                    return;
+
+                }
+
+
+                const dashboardProfileData =
+                    dashboardProfileSnapshot.data();
+
+
+                const adminDashboardCard =
+                    document.getElementById(
+                        "adminDashboardCard"
+                    );
+
+
+                if (adminDashboardCard) {
+
+                    try {
+
+                        adminDashboardCard.hidden =
+                            !await isAuthorizedAdmin(
+                                authenticatedUser
+                            );
+
+                    } catch (error) {
+
+                        console.error(
+                            "Admin authorization could not be checked.",
+                            error
+                        );
+
+                        adminDashboardCard.hidden = true;
+
+                    }
+
+                }
+
+                const dashboardDisplayName =
+                    `${dashboardProfileData.preferredName || dashboardProfileData.firstName || ""} ${dashboardProfileData.lastName || ""}`
+                        .trim() ||
+                    "WBA Member";
+
+                const dashboardInitials =
+                    `${(dashboardProfileData.firstName || "").charAt(0)}${(dashboardProfileData.lastName || "").charAt(0)}`
+                        .toUpperCase() ||
+                    "WBA";
+
+
+                document.getElementById(
+                    "dashboardDisplayName"
+                ).textContent =
+                    dashboardDisplayName;
+
+                document.getElementById(
+                    "dashboardInitials"
+                ).textContent =
+                    dashboardInitials;
+
+                document.getElementById(
+                    "dashboardMembershipStatus"
+                ).textContent =
+                    dashboardProfileData.membershipStatus ||
+                    "No Membership";
+
+
+                if (dashboardProfileData.profilePhotoPath) {
+
+                    const dashboardPhoto =
+                        document.getElementById(
+                            "dashboardPhoto"
+                        );
+
+                    const dashboardPhotoPlaceholder =
+                        document.getElementById(
+                            "dashboardPhotoPlaceholder"
+                        );
+
+
+                    try {
+
+                        const photoRef =
+                            ref(
+                                storage,
+                                dashboardProfileData.profilePhotoPath
+                            );
+
+                        const photoURL =
+                            new URL(
+                                await getDownloadURL(photoRef)
+                            );
+
+
+                        if (dashboardProfileData.profilePhotoUpdatedAt) {
+
+                            photoURL.searchParams.set(
+                                "updatedAt",
+                                dashboardProfileData.profilePhotoUpdatedAt
+                            );
+
+                        }
+
+
+                        dashboardPhoto.onerror = () => {
+
+                            dashboardPhoto.style.display =
+                                "none";
+
+                            dashboardPhotoPlaceholder.style.display =
+                                "flex";
+
+                        };
+
+                        dashboardPhoto.src =
+                            photoURL.toString();
+
+                        dashboardPhoto.style.display =
+                            "block";
+
+                        dashboardPhotoPlaceholder.style.display =
+                            "none";
+
+                    } catch (error) {
+
+                        console.error(
+                            "Dashboard profile photo could not be loaded.",
+                            error
+                        );
+
+                    }
+
+                }
+
+
+                dashboardMessage.textContent =
+                    "";
+
+            } catch (error) {
+
+                console.error(error);
+
+                dashboardMessage.textContent =
+                    "We couldn't load your dashboard. Please try again.";
+
+            }
+
+        }
+    );
+
+}
+
+
+// ------------------------------------
+// Admin Dashboard
+// ------------------------------------
+
+const adminDashboard =
+    document.getElementById(
+        "adminDashboard"
+    );
+
+
+if (adminDashboard) {
+
+    const adminAccessMessage =
+        document.getElementById(
+            "adminAccessMessage"
+        );
+
+
+    onAuthStateChanged(
+        auth,
+        async (authenticatedUser) => {
+
+            if (
+                !authenticatedUser ||
+                !authenticatedUser.emailVerified
+            ) {
+
+                window.location.replace(
+                    "login.html"
+                );
+
+                return;
+
+            }
+
+
+            try {
+
+                if (
+                    !await isAuthorizedAdmin(
+                        authenticatedUser
+                    )
+                ) {
+
+                    window.location.replace(
+                        "dashboard.html"
+                    );
+
+                    return;
+
+                }
+
+
+                adminDashboard.hidden = false;
+                adminAccessMessage.textContent = "";
+
+            } catch (error) {
+
+                console.error(
+                    "Admin authorization could not be verified.",
+                    error
+                );
+
+                window.location.replace(
+                    "dashboard.html"
+                );
+
+            }
+
+        }
+    );
+
+}
+
+
+// ------------------------------------
+// Admin Membership
+// ------------------------------------
+
+const adminMemberDirectory =
+    document.getElementById(
+        "adminMemberDirectory"
+    );
+
+
+if (adminMemberDirectory) {
+
+    const adminMemberSearchInput =
+        document.getElementById(
+            "adminMemberSearchInput"
+        );
+
+    const adminMemberTableBody =
+        document.getElementById(
+            "adminMemberTableBody"
+        );
+
+    const adminMemberMessage =
+        document.getElementById(
+            "adminMemberMessage"
+        );
+
+    const adminMemberAccessMessage =
+        document.getElementById(
+            "adminMemberAccessMessage"
+        );
+
+    let adminMembers = [];
+
+
+    const formatAdminMembershipDate =
+        (value) => {
+
+            if (!value) {
+                return "—";
+            }
+
+
+            const date =
+                typeof value.toDate === "function"
+                    ? value.toDate()
+                    : new Date(value);
+
+
+            if (Number.isNaN(date.getTime())) {
+                return String(value);
+            }
+
+
+            return new Intl.DateTimeFormat(
+                undefined,
+                {
+                    year: "numeric",
+                    month: "short",
+                    day: "numeric"
+                }
+            ).format(date);
+
+        };
+
+
+    const getAdminMemberName =
+        (memberData) => {
+
+            return `${memberData.preferredName || memberData.firstName || ""} ${memberData.lastName || ""}`
+                .trim() ||
+                "Unnamed Account";
+
+        };
+
+
+    const renderAdminMembers =
+        (membersToRender) => {
+
+            adminMemberTableBody.replaceChildren();
+
+
+            membersToRender.forEach((memberData) => {
+
+                const row =
+                    document.createElement("tr");
+
+                const cells = [
+                    ["Member", getAdminMemberName(memberData)],
+                    ["Email", memberData.email || "—"],
+                    ["Status", memberData.membershipStatus || "No Membership"],
+                    ["Type", memberData.membershipType || "—"],
+                    ["Member ID", memberData.memberId || memberData.memberNumber || "—"],
+                    ["Member Since", formatAdminMembershipDate(memberData.membershipStartDate || memberData.memberSince)],
+                    ["Current Through", formatAdminMembershipDate(memberData.membershipCurrentThrough || memberData.renewalDate)]
+                ];
+
+
+                cells.forEach(([label, value]) => {
+
+                    const cell =
+                        document.createElement("td");
+
+                    cell.dataset.label = label;
+                    cell.textContent = value;
+                    row.appendChild(cell);
+
+                });
+
+
+                adminMemberTableBody.appendChild(row);
+
+            });
+
+
+            adminMemberMessage.textContent =
+                membersToRender.length > 0
+                    ? `${membersToRender.length} account${membersToRender.length === 1 ? "" : "s"} found.`
+                    : "No accounts match your search.";
+
+        };
+
+
+    adminMemberSearchInput.addEventListener(
+        "input",
+        () => {
+
+            const searchTerm =
+                adminMemberSearchInput.value
+                    .trim()
+                    .toLocaleLowerCase();
+
+
+            const filteredMembers =
+                adminMembers.filter((memberData) => {
+
+                    const searchableValues = [
+                        memberData.firstName,
+                        memberData.lastName,
+                        memberData.preferredName,
+                        memberData.email,
+                        memberData.memberId,
+                        memberData.memberNumber
+                    ];
+
+
+                    return searchableValues.some((value) =>
+                        String(value || "")
+                            .toLocaleLowerCase()
+                            .includes(searchTerm)
+                    );
+
+                });
+
+
+            renderAdminMembers(filteredMembers);
+
+        }
+    );
+
+
+    onAuthStateChanged(
+        auth,
+        async (authenticatedUser) => {
+
+            if (
+                !authenticatedUser ||
+                !authenticatedUser.emailVerified
+            ) {
+
+                window.location.replace(
+                    "login.html"
+                );
+
+                return;
+
+            }
+
+
+            try {
+
+                if (
+                    !await isAuthorizedAdmin(
+                        authenticatedUser
+                    )
+                ) {
+
+                    window.location.replace(
+                        "dashboard.html"
+                    );
+
+                    return;
+
+                }
+
+
+                adminMemberDirectory.hidden = false;
+                adminMemberAccessMessage.textContent = "";
+
+
+                const usersSnapshot =
+                    await getDocs(
+                        collection(db, "users")
+                    );
+
+
+                adminMembers =
+                    usersSnapshot.docs
+                        .map((userSnapshot) => ({
+                            uid: userSnapshot.id,
+                            ...userSnapshot.data()
+                        }))
+                        .sort((firstMember, secondMember) =>
+                            getAdminMemberName(firstMember)
+                                .localeCompare(
+                                    getAdminMemberName(secondMember)
+                                )
+                        );
+
+                renderAdminMembers(adminMembers);
+
+            } catch (error) {
+
+                console.error(
+                    "Admin membership data could not be loaded.",
+                    error
+                );
+
+                adminMemberMessage.textContent =
+                    "We couldn't load the membership accounts.";
+
+            }
+
+        }
+    );
+
+}
 
 
 // ------------------------------------
@@ -824,7 +1471,9 @@ if (memberDirectory) {
 
             const membershipLabel =
                 memberData.membershipType ||
-                memberData.membershipStatus;
+                getMemberFacingStatus(
+                    memberData.membershipStatus
+                );
 
 
             if (membershipLabel) {
@@ -1331,10 +1980,31 @@ const profileLocation =
             );
 
 
-document.getElementById(
-    "profileLocation"
-).textContent =
-    profileLocation;
+const profileHeaderLocation =
+    document.getElementById(
+        "profileLocation"
+    );
+
+
+if (
+    profileLocation &&
+    profileLocation !== "Private" &&
+    profileLocation !== "Not provided"
+) {
+
+    profileHeaderLocation.textContent =
+        profileLocation;
+
+    profileHeaderLocation.style.display =
+        "block";
+
+} else {
+
+    profileHeaderLocation.textContent = "";
+    profileHeaderLocation.style.display =
+        "none";
+
+}
 
 
 document.getElementById(
@@ -1448,28 +2118,64 @@ if (
                         ? profileOwnerData.wbaRoles
                         : [];
 
+                const roleNames =
+                    wbaRoles
+                        .map((role) =>
+                            typeof role === "string"
+                                ? role
+                                : role?.name
+                        )
+                        .filter(Boolean);
+
+                const profileHeaderRoles =
+                    document.getElementById(
+                        "profileHeaderRoles"
+                    );
+
+
+                if (roleNames.length > 0) {
+
+                    profileHeaderRoles.textContent =
+                        roleNames.join(", ");
+
+                    profileHeaderRoles.style.display =
+                        "block";
+
+                } else {
+
+                    profileHeaderRoles.textContent = "";
+                    profileHeaderRoles.style.display =
+                        "none";
+
+                }
+
                 const wbaRolesContainer =
                     document.getElementById(
                         "wbaRoles"
                     );
 
 
-                if (wbaRoles.length > 0) {
+                const wbaRolesSection =
+                    document.getElementById(
+                        "wbaRolesSection"
+                    );
+
+
+                wbaRolesSection.style.display =
+                    isOwner
+                        ? "block"
+                        : "none";
+
+
+                if (
+                    isOwner &&
+                    roleNames.length > 0
+                ) {
 
                     wbaRolesContainer.replaceChildren();
 
 
-                    wbaRoles.forEach((role) => {
-
-                        const roleName =
-                            typeof role === "string"
-                                ? role
-                                : role?.name;
-
-
-                        if (!roleName) {
-                            return;
-                        }
+                    roleNames.forEach((roleName) => {
 
 
                         const roleBadge =
@@ -1573,8 +2279,37 @@ if (
                 document.getElementById(
                     "membershipStatus"
                 ).textContent =
-                    profileOwnerData.membershipStatus ||
-                    "No Membership";
+                    isOwner
+                        ? profileOwnerData.membershipStatus ||
+                            "No Membership"
+                        : getMemberFacingStatus(
+                            profileOwnerData.membershipStatus
+                        );
+
+
+                document.getElementById(
+                    "membershipSectionHeading"
+                ).textContent =
+                    isOwner
+                        ? "WBA Membership"
+                        : "Membership Status";
+
+
+                [
+                    "membershipTypeDetail",
+                    "memberIdDetail",
+                    "memberSinceDetail",
+                    "membershipCurrentThroughDetail"
+                ].forEach((detailId) => {
+
+                    document.getElementById(
+                        detailId
+                    ).style.display =
+                        isOwner
+                            ? "flex"
+                            : "none";
+
+                });
 
 
                 document.getElementById(
@@ -1608,6 +2343,81 @@ if (
                         profileOwnerData.membershipCurrentThrough ||
                         profileOwnerData.renewalDate
                     );
+
+
+                // -------------------------
+                // Dog Sports & Activities
+                // -------------------------
+
+                const dogSportsSection =
+                    document.getElementById(
+                        "dogSportsSection"
+                    );
+
+                const profileDogSports =
+                    document.getElementById(
+                        "profileDogSports"
+                    );
+
+                const dogSportLabels =
+                    Array.isArray(profileOwnerData.dogSports)
+                        ? profileOwnerData.dogSports
+                            .map((sportId) =>
+                                DOG_SPORT_LABELS.get(sportId)
+                            )
+                            .filter(Boolean)
+                        : [];
+
+
+                profileDogSports.replaceChildren();
+
+
+                if (dogSportLabels.length > 0) {
+
+                    dogSportLabels.forEach((sportLabel) => {
+
+                        const sportTag =
+                            document.createElement("span");
+
+                        sportTag.className =
+                            "profile-sport-tag";
+
+                        sportTag.textContent =
+                            sportLabel;
+
+                        profileDogSports.appendChild(
+                            sportTag
+                        );
+
+                    });
+
+                    dogSportsSection.style.display =
+                        "block";
+
+                } else if (isOwner) {
+
+                    const emptySportsMessage =
+                        document.createElement("p");
+
+                    emptySportsMessage.className =
+                        "profile-muted";
+
+                    emptySportsMessage.textContent =
+                        "No Dog Sports & Activities added yet.";
+
+                    profileDogSports.appendChild(
+                        emptySportsMessage
+                    );
+
+                    dogSportsSection.style.display =
+                        "block";
+
+                } else {
+
+                    dogSportsSection.style.display =
+                        "none";
+
+                }
 
 
                 console.log(
@@ -1671,6 +2481,64 @@ const editProfilePhotoPlaceholder =
     document.getElementById(
         "editProfilePhotoPlaceholder"
     );
+
+const dogSportsCheckboxGrid =
+    document.getElementById(
+        "dogSportsCheckboxGrid"
+    );
+
+const requestSportButton =
+    document.getElementById(
+        "requestSportButton"
+    );
+
+const requestSportMessage =
+    document.getElementById(
+        "requestSportMessage"
+    );
+
+
+DOG_SPORT_OPTIONS.forEach((option) => {
+
+    const checkboxLabel =
+        document.createElement("label");
+
+    checkboxLabel.className =
+        "checkbox-option";
+
+    const checkbox =
+        document.createElement("input");
+
+    checkbox.type =
+        "checkbox";
+
+    checkbox.name =
+        "dogSports";
+
+    checkbox.value =
+        option.id;
+
+    checkboxLabel.append(
+        checkbox,
+        document.createTextNode(option.label)
+    );
+
+    dogSportsCheckboxGrid.appendChild(
+        checkboxLabel
+    );
+
+});
+
+
+requestSportButton.addEventListener(
+    "click",
+    () => {
+
+        requestSportMessage.textContent =
+            "Request feature coming soon.";
+
+    }
+);
 
     onAuthStateChanged(
         auth,
@@ -1899,6 +2767,32 @@ document.getElementById(
     "aboutVisibility"
 ).value =
     userData.privacy?.about || "members";
+
+
+document.getElementById(
+    "preferredNameVisibility"
+).value =
+    userData.privacy?.preferredName || "members";
+
+
+const savedDogSports =
+    new Set(
+        Array.isArray(userData.dogSports)
+            ? userData.dogSports
+            : []
+    );
+
+
+dogSportsCheckboxGrid
+    .querySelectorAll(
+        'input[name="dogSports"]'
+    )
+    .forEach((checkbox) => {
+
+        checkbox.checked =
+            savedDogSports.has(checkbox.value);
+
+    });
 
 
 
@@ -2236,7 +3130,24 @@ removeProfilePhotoButton.addEventListener(
                 .trim(),
 
 
+        dogSports:
+            Array.from(
+                dogSportsCheckboxGrid.querySelectorAll(
+                    'input[name="dogSports"]:checked'
+                )
+            )
+                .map((checkbox) => checkbox.value)
+                .filter((sportId) =>
+                    DOG_SPORT_IDS.has(sportId)
+                ),
+
+
         privacy: {
+
+            preferredName:
+                document.getElementById(
+                    "preferredNameVisibility"
+                ).value,
 
             email:
                 document.getElementById(

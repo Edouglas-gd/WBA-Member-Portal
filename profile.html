@@ -36,7 +36,17 @@
     </header>
 
 
-    <main class="app-content">
+    <nav
+        class="member-nav"
+        aria-label="Member navigation"
+    >
+        <a href="dashboard.html">Dashboard</a>
+        <a href="profile.html" aria-current="page">My Profile</a>
+        <button type="button" id="logoutButton">Log Out</button>
+    </nav>
+
+
+    <main class="app-content profile-page-content">
 
         <section
             class="profile-page"
@@ -73,10 +83,11 @@
                         id="profileLocation"
                     ></p>
 
-                    <div
-                        class="profile-badges"
-                        id="profileBadges"
-                    ></div>
+                    <p
+                        class="profile-header-roles"
+                        id="profileHeaderRoles"
+                        style="display: none;"
+                    ></p>
 
                 </div>
 
@@ -84,13 +95,6 @@
 
 
             <div class="profile-actions">
-
-                <a
-                    href="members.html"
-                    class="profile-action-button"
-                >
-                    Member Lookup
-                </a>
 
                 <a
                     href="edit-profile.html"
@@ -106,7 +110,10 @@
 
             <!-- WBA Roles -->
 
-            <section class="profile-section">
+            <section
+                class="profile-section"
+                id="wbaRolesSection"
+            >
 
                 <h3>WBA Roles</h3>
 
@@ -124,11 +131,45 @@
             </section>
 
 
-            <!-- About -->
+            <!-- Contact & Location -->
 
-            <section class="profile-section">
+            <section
+                class="profile-section"
+                id="contactSection"
+            >
 
-                <h3>About</h3>
+                <h3>Contact & Location</h3>
+
+                <div class="profile-details-grid">
+
+                    <div class="profile-detail" id="profileEmailDetail">
+                        <span class="profile-detail-label">Email</span>
+                        <span id="profileEmail">—</span>
+                    </div>
+
+                    <div class="profile-detail" id="profilePhoneDetail">
+                        <span class="profile-detail-label">Phone</span>
+                        <span id="profilePhone">—</span>
+                    </div>
+
+                    <div class="profile-detail" id="profileLocationDetail">
+                        <span class="profile-detail-label">Location</span>
+                        <span id="profileFullLocation">—</span>
+                    </div>
+
+                </div>
+
+            </section>
+
+
+            <!-- About Me -->
+
+            <section
+                class="profile-section"
+                id="aboutSection"
+            >
+
+                <h3>About Me</h3>
 
                 <p
                     id="profileAbout"
@@ -142,13 +183,16 @@
 
             <!-- Membership -->
 
-            <section class="profile-section">
+            <section
+                class="profile-section"
+                id="membershipSection"
+            >
 
-                <h3>WBA Membership</h3>
+                <h3 id="membershipSectionHeading">WBA Membership</h3>
 
                 <div class="profile-details-grid">
 
-                    <div class="profile-detail">
+                    <div class="profile-detail" id="membershipStatusDetail">
 
                         <span class="profile-detail-label">
                             Status
@@ -161,7 +205,7 @@
                     </div>
 
 
-                    <div class="profile-detail">
+                    <div class="profile-detail" id="membershipTypeDetail">
 
                         <span class="profile-detail-label">
                             Membership Type
@@ -174,7 +218,7 @@
                     </div>
 
 
-                    <div class="profile-detail">
+                    <div class="profile-detail" id="memberIdDetail">
 
                         <span class="profile-detail-label">
                             Member ID
@@ -187,7 +231,7 @@
                     </div>
 
 
-                    <div class="profile-detail">
+                    <div class="profile-detail" id="memberSinceDetail">
 
                         <span class="profile-detail-label">
                             Member Since
@@ -200,7 +244,7 @@
                     </div>
 
 
-                    <div class="profile-detail">
+                    <div class="profile-detail" id="membershipCurrentThroughDetail">
 
                         <span class="profile-detail-label">
                             Membership Current Through
@@ -217,53 +261,19 @@
             </section>
 
 
-            <!-- Contact -->
+            <!-- Dog Sports & Activities -->
 
-            <section class="profile-section">
+            <section
+                class="profile-section"
+                id="dogSportsSection"
+            >
 
-                <h3>Contact & Location</h3>
+                <h3>Dog Sports &amp; Activities</h3>
 
-                <div class="profile-details-grid">
-
-                    <div class="profile-detail">
-
-                        <span class="profile-detail-label">
-                            Email
-                        </span>
-
-                        <span id="profileEmail">
-                            —
-                        </span>
-
-                    </div>
-
-
-                    <div class="profile-detail">
-
-                        <span class="profile-detail-label">
-                            Phone
-                        </span>
-
-                        <span id="profilePhone">
-                            —
-                        </span>
-
-                    </div>
-
-
-                    <div class="profile-detail">
-
-                        <span class="profile-detail-label">
-                            Location
-                        </span>
-
-                        <span id="profileFullLocation">
-                            —
-                        </span>
-
-                    </div>
-
-                </div>
+                <div
+                    id="profileDogSports"
+                    class="profile-sport-tags"
+                ></div>
 
             </section>
 
@@ -285,18 +295,6 @@
                 id="profileMessage"
                 role="alert"
             ></p>
-
-
-            <div class="profile-footer-actions">
-
-                <button
-                    type="button"
-                    id="logoutButton"
-                >
-                    Log Out
-                </button>
-
-            </div>
 
         </section>
 

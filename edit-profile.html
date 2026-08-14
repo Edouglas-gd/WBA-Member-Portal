@@ -3,343 +3,263 @@
 
 <head>
     <meta charset="UTF-8">
-
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0"
-    >
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
     <title>Edit Profile - WBA Member Portal</title>
 
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
-
-    <meta
-        name="theme-color"
-        content="#ffffff"
-    >
+    <meta name="theme-color" content="#ffffff">
 </head>
-
 
 <body>
 
     <header class="app-header">
-
         <img
             src="images/wba-icon.png"
             alt="Working Beauceron Association"
             class="app-logo"
         >
-
         <h1>Edit Profile</h1>
-
     </header>
 
+    <nav class="member-nav" aria-label="Member navigation">
+        <a href="dashboard.html">Dashboard</a>
+        <a href="profile.html">My Profile</a>
+        <a href="members.html">Member Lookup</a>
+        <button type="button" id="logoutButton">Log Out</button>
+    </nav>
 
-    <main class="app-content">
+    <main class="app-content edit-profile-page">
 
-        <section class="welcome-card">
-
+        <section class="edit-profile-card">
             <h2>Profile Settings</h2>
-
-            <p>
-                Update the information connected to your WBA Member Portal profile.
-            </p>
-
-
-            <form id="editProfileForm">
-
-                <h3>Profile Photo</h3>
-
-<div class="profile-photo-editor">
-
-    <div class="profile-photo-preview">
-
-        <img
-            id="editProfilePhoto"
-            class="profile-photo-image"
-            alt="Profile photo"
-            style="display: none;"
-        >
-
-        <div
-            id="editProfilePhotoPlaceholder"
-            class="profile-photo-placeholder"
-        >
-            <span id="editProfileInitials">
-                WBA
-            </span>
-        </div>
-
-    </div>
-
-
-    <label for="profilePhotoInput">
-        Choose a Profile Photo
-    </label>
-
-    <input
-        type="file"
-        id="profilePhotoInput"
-        accept="image/*"
-    >
-
-
-    <p class="profile-muted">
-        Choose an image smaller than 5 MB.
-    </p>
-
-
-    <div class="profile-photo-actions">
-
-        <button
-            type="button"
-            id="removeProfilePhotoButton"
-            style="display: none;"
-        >
-            Remove Photo
-        </button>
-
-    </div>
-
-
-    <p
-        id="profilePhotoMessage"
-        role="alert"
-    ></p>
-
-</div>
-
-
-
-                <h3>Personal Information</h3>
-
-
-                <label for="firstName">
-                    First Name
-                </label>
-
-                <input
-                    type="text"
-                    id="firstName"
-                    required
-                >
-
-
-                <label for="lastName">
-                    Last Name
-                </label>
-
-                <input
-                    type="text"
-                    id="lastName"
-                    required
-                >
-
-
-                <label for="preferredName">
-                    Preferred Name
-                </label>
-
-                <input
-                    type="text"
-                    id="preferredName"
-                >
-
-
-                <label for="email">
-                    Email Address
-                </label>
-
-                <input
-                    type="email"
-                    id="email"
-                    readonly
-                >
-
-
-                <label for="phone">
-                    Phone Number
-                </label>
-
-                <input
-                    type="tel"
-                    id="phone"
-                    autocomplete="tel"
-                >
-
-
-                <h3>Address</h3>
-
-
-                <label for="address">
-                    Street Address
-                </label>
-
-                <input
-                    type="text"
-                    id="address"
-                    autocomplete="street-address"
-                >
-
-
-                <label for="city">
-                    City
-                </label>
-
-                <input
-                    type="text"
-                    id="city"
-                    autocomplete="address-level2"
-                >
-
-
-                <label for="state">
-                    State / Province
-                </label>
-
-                <input
-                    type="text"
-                    id="state"
-                    autocomplete="address-level1"
-                >
-
-
-                <label for="zip">
-                    ZIP / Postal Code
-                </label>
-
-                <input
-                    type="text"
-                    id="zip"
-                    autocomplete="postal-code"
-                >
-
-
-                <label for="country">
-                    Country
-                </label>
-
-                <input
-                    type="text"
-                    id="country"
-                    autocomplete="country-name"
-                >
-
-                <h3>Profile Privacy</h3>
-
-<p>
-    Choose what other WBA members can see on your profile.
-    WBA Administrators will still have access to required
-    membership contact information.
-</p>
-
-
-<label for="emailVisibility">
-    Email Address
-</label>
-
-<select id="emailVisibility">
-    <option value="members">Visible to Members</option>
-    <option value="private">Private</option>
-</select>
-
-
-<label for="phoneVisibility">
-    Phone Number
-</label>
-
-<select id="phoneVisibility">
-    <option value="members">Visible to Members</option>
-    <option value="private">Private</option>
-</select>
-
-
-<label for="locationVisibility">
-    Location
-</label>
-
-<select id="locationVisibility">
-
-    <option value="full">
-        Full Address
-    </option>
-
-    <option value="cityState">
-        City & State / Province
-    </option>
-
-    <option value="state">
-        State / Province Only
-    </option>
-
-    <option value="country">
-        Country Only
-    </option>
-
-    <option value="private">
-        Private
-    </option>
-
-</select>
-
-
-<label for="aboutVisibility">
-    About Section
-</label>
-
-<select id="aboutVisibility">
-    <option value="members">Visible to Members</option>
-    <option value="private">Private</option>
-</select>
-
-
-
-
-                <h3>About</h3>
-
-
-                <label for="about">
-                    About Me
-                </label>
-
-                <textarea
-                    id="about"
-                    rows="6"
-                    maxlength="1000"
-                    placeholder="Share a little about yourself, your Beaucerons, interests, or involvement with the WBA."
-                ></textarea>
-
-
-                <button type="submit">
-                    Save Changes
-                </button>
+            <p>Update the information connected to your WBA Member Portal profile.</p>
+
+            <form id="editProfileForm" class="profile-form">
+
+                <section class="form-section profile-photo-section">
+                    <h3>Profile Photo</h3>
+
+                    <div class="profile-photo-editor">
+                        <div class="profile-photo-preview">
+                            <img
+                                id="editProfilePhoto"
+                                class="profile-photo-image"
+                                alt="Profile photo"
+                                style="display: none;"
+                            >
+
+                            <div
+                                id="editProfilePhotoPlaceholder"
+                                class="profile-photo-placeholder"
+                            >
+                                <span id="editProfileInitials">WBA</span>
+                            </div>
+                        </div>
+
+                        <div class="form-field">
+                            <label for="profilePhotoInput">Choose a Profile Photo</label>
+                            <input
+                                type="file"
+                                id="profilePhotoInput"
+                                accept="image/*"
+                            >
+                            <p class="field-help">Choose an image smaller than 5 MB.</p>
+                        </div>
+
+                        <div class="profile-photo-actions">
+                            <button
+                                type="button"
+                                id="removeProfilePhotoButton"
+                                style="display: none;"
+                            >
+                                Remove Photo
+                            </button>
+                        </div>
+
+                        <p id="profilePhotoMessage" role="alert"></p>
+                    </div>
+                </section>
+
+                <hr class="form-divider">
+
+                <section class="form-section">
+                    <h3>Personal Information</h3>
+
+                    <div class="form-row form-row-two-columns">
+                        <div class="form-field">
+                            <label for="firstName">First Name</label>
+                            <input type="text" id="firstName" required>
+                        </div>
+
+                        <div class="form-field">
+                            <label for="lastName">Last Name</label>
+                            <input type="text" id="lastName" required>
+                        </div>
+                    </div>
+
+                    <div class="field-with-visibility">
+                        <div class="form-field">
+                            <label for="preferredName">Preferred Name</label>
+                            <input type="text" id="preferredName">
+                        </div>
+
+                        <div class="form-field visibility-control">
+                            <label for="preferredNameVisibility">Preferred Name Visibility</label>
+                            <select id="preferredNameVisibility">
+                                <option value="members">Visible to Members</option>
+                                <option value="private">Private</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="field-with-visibility">
+                        <div class="form-field">
+                            <label for="email">Email Address</label>
+                            <input type="email" id="email" readonly>
+                        </div>
+
+                        <div class="form-field visibility-control">
+                            <label for="emailVisibility">Email Visibility</label>
+                            <select id="emailVisibility">
+                                <option value="members">Visible to Members</option>
+                                <option value="private">Private</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="field-with-visibility">
+                        <div class="form-field">
+                            <label for="phone">Phone Number</label>
+                            <input type="tel" id="phone" autocomplete="tel">
+                        </div>
+
+                        <div class="form-field visibility-control">
+                            <label for="phoneVisibility">Phone Visibility</label>
+                            <select id="phoneVisibility">
+                                <option value="members">Visible to Members</option>
+                                <option value="private">Private</option>
+                            </select>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h3>Address</h3>
+
+                    <div class="form-field">
+                        <label for="address">Street Address</label>
+                        <input type="text" id="address" autocomplete="street-address">
+                    </div>
+
+                    <div class="form-row form-row-two-columns">
+                        <div class="form-field">
+                            <label for="city">City</label>
+                            <input type="text" id="city" autocomplete="address-level2">
+                        </div>
+
+                        <div class="form-field">
+                            <label for="state">State / Province</label>
+                            <input type="text" id="state" autocomplete="address-level1">
+                        </div>
+                    </div>
+
+                    <div class="form-row form-row-two-columns">
+                        <div class="form-field">
+                            <label for="zip">ZIP / Postal Code</label>
+                            <input type="text" id="zip" autocomplete="postal-code">
+                        </div>
+
+                        <div class="form-field">
+                            <label for="country">Country</label>
+                            <input type="text" id="country" autocomplete="country-name">
+                        </div>
+                    </div>
+
+                    <div class="form-field">
+                        <label for="locationVisibility">Location Visibility</label>
+                        <select id="locationVisibility">
+                            <option value="full">Full Address</option>
+                            <option value="cityState">City &amp; State / Province</option>
+                            <option value="state">State / Province Only</option>
+                            <option value="country">Country Only</option>
+                            <option value="private">Private</option>
+                        </select>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h3>About Me</h3>
+
+                    <div class="form-field">
+                        <label for="about">Bio</label>
+                        <textarea
+                            id="about"
+                            rows="8"
+                            maxlength="1000"
+                            placeholder="Share a little about yourself, your Beaucerons, interests, or involvement with the WBA."
+                        ></textarea>
+                    </div>
+
+                    <div class="form-field visibility-control visibility-control-inline">
+                        <label for="aboutVisibility">Bio Visibility</label>
+                        <select id="aboutVisibility">
+                            <option value="members">Visible to Members</option>
+                            <option value="private">Private</option>
+                        </select>
+                    </div>
+                </section>
+
+                <section class="form-section">
+                    <h3>Dog Sports &amp; Activities</h3>
+                    <p>Select the activities you participate in or are interested in.</p>
+
+                    <div
+                        id="dogSportsCheckboxGrid"
+                        class="checkbox-grid"
+                    ></div>
+
+                    <button type="button" id="requestSportButton">
+                        Request Another Sport / Activity
+                    </button>
+
+                    <p
+                        id="requestSportMessage"
+                        class="profile-muted"
+                        role="status"
+                    ></p>
+                </section>
+
+                <section class="form-section">
+                    <h3>Dogs</h3>
+                    <p class="profile-muted">
+                        Dogs connected to your profile will appear here in a future version.
+                    </p>
+                </section>
+
+                <section class="form-section form-save-section">
+                    <p class="profile-muted">
+                        Saving may take a few minutes when uploading a new profile photo. Please remain on this page until the save is complete.
+                    </p>
+
+                    <button type="submit" class="primary-save-button">
+                        Save Changes
+                    </button>
+                </section>
 
             </form>
 
-
-            <p
-                id="editProfileMessage"
-                role="alert"
-            ></p>
-
+            <p id="editProfileMessage" role="alert"></p>
 
             <p>
-                <a href="profile.html">
-                    Cancel and Return to My Profile
-                </a>
+                <a href="profile.html">Cancel and Return to My Profile</a>
             </p>
-
         </section>
 
     </main>
 
-
-    <script
-        type="module"
-        src="app.js"
-    ></script>
-
+    <script type="module" src="app.js"></script>
 </body>
 
 </html>
