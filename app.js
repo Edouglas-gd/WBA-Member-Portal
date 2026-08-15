@@ -480,12 +480,20 @@ const validateMembershipTypeEligibility = (applicationData, membershipYear) => {
 
 
 const getAdminAuthorization = async (authenticatedUser) => {
-    if (!authenticatedUser) return {active: false, superAdmin: false};
+    if (!authenticatedUser) return {active: false, moderator: false, role: "member", superAdmin: false};
     const snapshot = await getDoc(doc(db, "adminUsers", authenticatedUser.uid));
     const data = snapshot.exists() ? snapshot.data() : {};
+    const superAdmin = data.active === true && data.superAdmin === true;
+    const trustedRole = data.role === "moderator"
+        ? "moderator"
+        : data.role === "admin" || (data.active === true && !data.role)
+            ? "admin"
+            : "member";
     return {
-        active: data.active === true,
-        superAdmin: data.superAdmin === true
+        active: data.active === true && (superAdmin || trustedRole === "admin"),
+        moderator: data.active === true && trustedRole === "moderator",
+        role: superAdmin ? "superAdmin" : trustedRole,
+        superAdmin
     };
 };
 
@@ -2460,6 +2468,9 @@ const buildMemberProfileData =
                         )
                         .filter(Boolean)
                     : [],
+            ...(sourceData.portalRole === "admin" || sourceData.portalRole === "moderator"
+                ? { portalRole: sourceData.portalRole }
+                : {}),
             membershipStatus:
                 getMemberFacingStatus(
                     sourceData.membershipStatus
@@ -3452,10 +3463,18 @@ if (adminApplicationDetail) {
             }
             const finalValidationMessage = await validateApplicationReadiness();
             if (finalValidationMessage) { message.textContent = finalValidationMessage; renderApplication(); return; }
-            const refreshedApplicant = await getDoc(doc(db, "users", applicantUid));
-            if (!refreshedApplicant.exists()) throw new Error("Applicant account no longer exists.");
-            applicantData = refreshedApplicant.data();
+            const [refreshedApplicant, refreshedMemberProfile, viewerAuthorization] = await Promise.all([
+                getDoc(doc(db, "users", applicantUid)),
+                getDoc(doc(db, "memberProfiles", applicantUid)),
+                getAdminAuthorization(adminUser)
+            ]);
+            applicantData = refreshedApplicant.exists() ? refreshedApplicant.data() : {};
             const reviewedAt = new Date().toISOString();
+            const applicationWrite = {
+                applicationStatus: "Approved",
+                reviewedAt,
+                reviewedBy: adminUser.uid
+            };
             const applicantIdentityUpdate = {
                 firstName: applicationData.firstName || "",
                 lastName: applicationData.lastName || "",
@@ -3464,19 +3483,40 @@ if (adminApplicationDetail) {
             };
             const updatedUserData = {
                 ...applicantData,
+                ...(!refreshedApplicant.exists() ? applicantIdentityUpdate : {}),
                 membershipStatus: "Pending Dues",
                 membershipUpdatedAt: reviewedAt,
                 membershipUpdatedBy: adminUser.uid
             };
-            const batch = writeBatch(db);
-            batch.set(doc(db, "membershipApplications", applicantUid), { applicationStatus: "Approved", reviewedAt, reviewedBy: adminUser.uid }, { merge: true });
-            batch.set(doc(db, "users", applicantUid), {
+            const userWrite = {
                 ...applicantIdentityUpdate,
                 membershipStatus: "Pending Dues",
                 membershipUpdatedAt: reviewedAt,
                 membershipUpdatedBy: adminUser.uid
-            }, { merge: true });
-            batch.set(doc(db, "memberProfiles", applicantUid), buildMemberProfileData(applicantUid, updatedUserData));
+            };
+            const fullProfileWrite = buildMemberProfileData(applicantUid, updatedUserData);
+            const profileWrite = refreshedMemberProfile.exists()
+                ? {
+                    membershipStatus: fullProfileWrite.membershipStatus,
+                    sponsorEligible: fullProfileWrite.sponsorEligible,
+                    memberId: fullProfileWrite.memberId || deleteField(),
+                    membershipType: fullProfileWrite.membershipType || deleteField(),
+                    membershipStartDate: fullProfileWrite.membershipStartDate || deleteField(),
+                    membershipCurrentThrough: fullProfileWrite.membershipCurrentThrough || deleteField()
+                }
+                : fullProfileWrite;
+            const historyActionTypes = ["APPLICATION_APPROVED"];
+            if ((applicantData.membershipStatus || null) !== "Pending Dues") {
+                historyActionTypes.push("MEMBERSHIP_STATUS_CHANGED");
+            }
+            const batch = writeBatch(db);
+            batch.set(doc(db, "membershipApplications", applicantUid), applicationWrite, { merge: true });
+            batch.set(doc(db, "users", applicantUid), userWrite, { merge: true });
+            if (refreshedMemberProfile.exists()) {
+                batch.set(doc(db, "memberProfiles", applicantUid), profileWrite, { merge: true });
+            } else {
+                batch.set(doc(db, "memberProfiles", applicantUid), profileWrite);
+            }
             batch.set(createMemberHistoryRef(applicantUid), buildMemberHistoryEntry({
                 memberUid: applicantUid,
                 action: "APPLICATION_APPROVED",
@@ -3499,6 +3539,26 @@ if (adminApplicationDetail) {
                     source: "Admin Application Review"
                 }));
             }
+            console.log("[Application Approval Debug]", {
+                applicantUid,
+                applicationStatusBefore: applicationData.applicationStatus,
+                userDocumentExists: refreshedApplicant.exists(),
+                memberProfileExists: refreshedMemberProfile.exists(),
+                writesIncluded: [
+                    "membershipApplications",
+                    "users",
+                    "memberProfiles",
+                    ...historyActionTypes.map(() => "memberHistory")
+                ],
+                applicationWriteKeys: Object.keys(applicationWrite),
+                userWriteKeys: Object.keys(userWrite),
+                profileWriteKeys: Object.keys(profileWrite),
+                historyActionTypes,
+                sponsorRequested: applicationData.sponsorRequested === true,
+                sponsorValidationPassed: true,
+                viewerAdmin: viewerAuthorization.active === true,
+                viewerSuperAdmin: viewerAuthorization.superAdmin === true
+            });
             await batch.commit();
             applicationData = { ...applicationData, applicationStatus: "Approved", reviewedAt, reviewedBy: adminUser.uid };
             applicantData = updatedUserData;
@@ -3561,13 +3621,22 @@ if (adminApplicationDetail) {
                 getDoc(doc(db, "users", applicantUid)),
                 loadAdminMemberAccounts()
             ]);
+            console.log("[Admin Application Load Debug]", {
+                applicationExists: applicationSnapshot.exists(),
+                applicantUserRecordExists: applicantSnapshot.exists(),
+                applicationStatus: applicationSnapshot.exists()
+                    ? applicationSnapshot.data().applicationStatus || null
+                    : null,
+                selectedRenderSource: applicationSnapshot.exists()
+                    ? "application-snapshot"
+                    : "none"
+            });
             if (!applicationSnapshot.exists() || !["Submitted", "Needs Revision", "Awaiting Board Decision", "Approved", "Declined"].includes(applicationSnapshot.data().applicationStatus)) {
-                accessMessage.textContent = "That reviewable application could not be found.";
+                accessMessage.textContent = "The membership application could not be found.";
                 return;
             }
-            if (!applicantSnapshot.exists()) { accessMessage.textContent = "The applicant account could not be found."; return; }
             applicationData = { applicantUid, ...applicationSnapshot.data() };
-            applicantData = applicantSnapshot.data();
+            applicantData = applicantSnapshot.exists() ? applicantSnapshot.data() : {};
             memberAccountsByUid = new Map(
                 adminMemberAccounts.map((memberData) => [memberData.uid, memberData])
             );
@@ -4034,8 +4103,15 @@ if (adminMemberDetail) {
         document.getElementById("adminSendPasswordResetButton");
     const passwordResetMessage =
         document.getElementById("adminPasswordResetMessage");
+    const portalAccessCurrent = document.getElementById("adminPortalAccessCurrent");
+    const portalAccessEditor = document.getElementById("adminPortalAccessEditor");
+    const portalAccessLevel = document.getElementById("adminPortalAccessLevel");
+    const savePortalAccessButton = document.getElementById("adminSavePortalAccessButton");
+    const portalAccessMessage = document.getElementById("adminPortalAccessMessage");
     let loadedMemberData = null;
     let loadedMemberUid = "";
+    let loadedPortalRole = "member";
+    let viewerAuthorization = null;
     let canViewMemberHistory = false;
     const adminNameCache = new Map();
     const historyActionLabels = {
@@ -4048,11 +4124,50 @@ if (adminMemberDetail) {
         APPLICATION_SENT_TO_BOARD: "Application Sent to Board for Review",
         APPLICATION_REVISION_REQUESTED: "Application Sent Back to Applicant",
         APPLICATION_APPROVED: "Application Approved",
-        APPLICATION_DECLINED: "Application Declined"
+        APPLICATION_DECLINED: "Application Declined",
+        PORTAL_ROLE_CHANGED: "Portal Access Changed"
+    };
+
+    const portalRoleLabels = {
+        member: "Regular Member",
+        moderator: "Moderator",
+        admin: "Admin",
+        superAdmin: "Super Admin"
+    };
+
+    const getTrustedPortalRole = (authorizationData = {}) => {
+        if (authorizationData.active === true && authorizationData.superAdmin === true) {
+            return "superAdmin";
+        }
+        if (authorizationData.active === true && authorizationData.role === "moderator") {
+            return "moderator";
+        }
+        if (authorizationData.active === true &&
+            (authorizationData.role === "admin" || !authorizationData.role)) {
+            return "admin";
+        }
+        return "member";
+    };
+
+    const renderPortalAccess = () => {
+        portalAccessCurrent.textContent = portalRoleLabels[loadedPortalRole];
+        portalAccessLevel.value = ["moderator", "admin"].includes(loadedPortalRole)
+            ? loadedPortalRole
+            : "member";
+        const readOnly = loadedPortalRole === "superAdmin" || loadedMemberUid === auth.currentUser?.uid;
+        portalAccessEditor.hidden = readOnly;
+        portalAccessMessage.textContent = loadedPortalRole === "superAdmin"
+            ? "Super Admin access cannot be changed here."
+            : loadedMemberUid === auth.currentUser?.uid
+                ? "You cannot change your own portal access level here."
+                : "";
     };
 
     const formatHistoryValue = (entry, value) => {
         if (value === null || value === undefined || value === "") return "Not Set";
+        if (entry.field === "portalRole") {
+            return portalRoleLabels[value] || String(value);
+        }
         if (["membershipStartDate", "membershipCurrentThrough"].includes(entry.field)) {
             const date = typeof value.toDate === "function"
                 ? value.toDate()
@@ -4300,6 +4415,83 @@ if (adminMemberDetail) {
         }
     });
 
+    savePortalAccessButton.addEventListener("click", async () => {
+        const adminUser = auth.currentUser;
+        const requestedRole = portalAccessLevel.value;
+        if (!adminUser || !viewerAuthorization?.active) return;
+        if (loadedMemberUid === adminUser.uid) {
+            portalAccessMessage.textContent = "You cannot change your own portal access level here.";
+            return;
+        }
+        if (loadedPortalRole === "superAdmin") {
+            portalAccessMessage.textContent = "Super Admin access cannot be changed here.";
+            return;
+        }
+        if (!['member', 'moderator', 'admin'].includes(requestedRole) || requestedRole === loadedPortalRole) {
+            portalAccessMessage.textContent = requestedRole === loadedPortalRole
+                ? "This account already has that access level."
+                : "Choose a valid access level.";
+            return;
+        }
+
+        const memberName = getApplicationApplicantName(loadedMemberData);
+        const confirmation = requestedRole === "member" && loadedPortalRole === "admin"
+            ? `Remove Admin access from ${memberName} and return this account to Regular Member?`
+            : `Change ${memberName} from ${portalRoleLabels[loadedPortalRole]} to ${portalRoleLabels[requestedRole]}?`;
+        if (!window.confirm(confirmation)) return;
+
+        savePortalAccessButton.disabled = true;
+        portalAccessMessage.textContent = "Saving portal access...";
+        try {
+            const authorization = await getAdminAuthorization(adminUser);
+            if (!authorization.active) throw new Error("Admin authorization is no longer active.");
+            const [targetAuthorizationSnapshot, targetProfileSnapshot] = await Promise.all([
+                getDoc(doc(db, "adminUsers", loadedMemberUid)),
+                getDoc(doc(db, "memberProfiles", loadedMemberUid))
+            ]);
+            const currentRole = getTrustedPortalRole(
+                targetAuthorizationSnapshot.exists() ? targetAuthorizationSnapshot.data() : {}
+            );
+            if (currentRole === "superAdmin") throw new Error("Super Admin access cannot be changed here.");
+            if (!targetProfileSnapshot.exists()) {
+                throw new Error("This member must have a member profile before portal access can be assigned.");
+            }
+
+            const batch = writeBatch(db);
+            const authorizationRef = doc(db, "adminUsers", loadedMemberUid);
+            const profileRef = doc(db, "memberProfiles", loadedMemberUid);
+            if (requestedRole === "member") {
+                batch.delete(authorizationRef);
+                batch.set(profileRef, {portalRole: deleteField()}, {merge: true});
+            } else {
+                batch.set(authorizationRef, {active: true, role: requestedRole});
+                batch.set(profileRef, {portalRole: requestedRole}, {merge: true});
+            }
+            batch.set(createMemberHistoryRef(loadedMemberUid), buildMemberHistoryEntry({
+                memberUid: loadedMemberUid,
+                action: "PORTAL_ROLE_CHANGED",
+                category: "administration",
+                performedBy: adminUser.uid,
+                field: "portalRole",
+                oldValue: currentRole,
+                newValue: requestedRole,
+                source: "Admin Member Management"
+            }));
+            await batch.commit();
+            loadedPortalRole = requestedRole;
+            renderPortalAccess();
+            portalAccessMessage.textContent =
+                `Portal access changed to ${portalRoleLabels[requestedRole]}.`;
+            if (canViewMemberHistory) await loadMemberHistory(loadedMemberUid);
+        } catch (error) {
+            console.error("Portal access could not be changed.", error);
+            portalAccessMessage.textContent = error.message ||
+                "We couldn't change portal access. Please try again.";
+        } finally {
+            savePortalAccessButton.disabled = false;
+        }
+    });
+
     form.addEventListener("submit", async (event) => {
         event.preventDefault();
         saveMessage.textContent = "Saving membership changes...";
@@ -4448,6 +4640,7 @@ if (adminMemberDetail) {
 
         try {
             const authorization = await getAdminAuthorization(authenticatedUser);
+            viewerAuthorization = authorization;
             canViewMemberHistory = authorization.active;
             if (!authorization.active) {
                 window.location.replace("dashboard.html");
@@ -4461,13 +4654,20 @@ if (adminMemberDetail) {
                 return;
             }
 
-            const userSnapshot = await getDoc(doc(db, "users", loadedMemberUid));
+            const [userSnapshot, targetAuthorizationSnapshot] = await Promise.all([
+                getDoc(doc(db, "users", loadedMemberUid)),
+                getDoc(doc(db, "adminUsers", loadedMemberUid))
+                    .catch(() => null)
+            ]);
             if (!userSnapshot.exists()) {
                 accessMessage.textContent = "That membership account could not be found.";
                 return;
             }
 
             loadedMemberData = userSnapshot.data();
+            loadedPortalRole = getTrustedPortalRole(
+                targetAuthorizationSnapshot?.exists() ? targetAuthorizationSnapshot.data() : {}
+            );
             setText("adminMemberName", getApplicationApplicantName(loadedMemberData));
             setText("adminMemberPreferredName", loadedMemberData.preferredName);
             setText("adminMemberEmail", loadedMemberData.email);
@@ -4488,6 +4688,7 @@ if (adminMemberDetail) {
                 MEMBERSHIP_TYPES.includes(loadedMemberData.membershipType) ? loadedMemberData.membershipType : "";
             document.getElementById("adminMembershipStartDate").value = toDateInputValue(loadedMemberData.membershipStartDate);
             document.getElementById("adminMembershipCurrentThrough").value = toDateInputValue(loadedMemberData.membershipCurrentThrough);
+            renderPortalAccess();
 
             adminMemberDetail.hidden = false;
             accessMessage.textContent = "";
@@ -4681,6 +4882,13 @@ if (memberDirectory) {
             memberDetails.appendChild(
                 memberName
             );
+
+            if (memberData.portalRole === "admin" || memberData.portalRole === "moderator") {
+                const portalRole = document.createElement("span");
+                portalRole.className = "portal-role-label";
+                portalRole.textContent = memberData.portalRole === "admin" ? "Admin" : "Moderator";
+                memberDetails.appendChild(portalRole);
+            }
 
 
             if (memberData.location) {
@@ -5099,8 +5307,20 @@ if (memberProfile) {
                 }
 
 
-                const profileOwnerData =
+                let profileOwnerData =
                     profileOwnerSnapshot.data();
+
+                if (usesOwnerView) {
+                    const publicProfileSnapshot = await getDoc(
+                        doc(db, "memberProfiles", profileOwnerId)
+                    );
+                    if (publicProfileSnapshot.exists()) {
+                        profileOwnerData = {
+                            ...profileOwnerData,
+                            portalRole: publicProfileSnapshot.data().portalRole
+                        };
+                    }
+                }
 
                 // -------------------------
                 // Name
@@ -5128,6 +5348,15 @@ if (memberProfile) {
                     "profileDisplayName"
                 ).textContent =
                     displayName || "WBA Member";
+
+                const profilePortalRole = document.getElementById("profilePortalRole");
+                const visiblePortalRole = profileOwnerData.portalRole === "admin"
+                    ? "Admin"
+                    : profileOwnerData.portalRole === "moderator"
+                        ? "Moderator"
+                        : "";
+                profilePortalRole.textContent = visiblePortalRole;
+                profilePortalRole.hidden = !visiblePortalRole;
 
 
                 // -------------------------
@@ -6531,9 +6760,23 @@ removeProfilePhotoButton.addEventListener(
             ? profileData.profilePhotoUpdatedAt
             : userData.profilePhotoUpdatedAt;
 
+    const memberProfileRef =
+        doc(
+            db,
+            "memberProfiles",
+            user.uid
+        );
+    const existingMemberProfileSnapshot = await getDoc(memberProfileRef);
+    const existingPortalRole = existingMemberProfileSnapshot.exists()
+        ? existingMemberProfileSnapshot.data().portalRole
+        : "";
+
     const memberProfileSourceData = {
         ...userData,
         ...profileData,
+        ...(existingPortalRole === "admin" || existingPortalRole === "moderator"
+            ? {portalRole: existingPortalRole}
+            : {}),
         email:
             user.email ||
             userData.email ||
@@ -6550,13 +6793,6 @@ removeProfilePhotoButton.addEventListener(
         buildMemberProfileData(
             user.uid,
             memberProfileSourceData
-        );
-
-    const memberProfileRef =
-        doc(
-            db,
-            "memberProfiles",
-            user.uid
         );
 
     const profileWriteBatch =

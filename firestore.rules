@@ -13,7 +13,22 @@ service cloud.firestore {
     function isAdmin() {
       return verifiedUser()
         && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid))
-        && get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.active == true;
+        && get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.active == true
+        && (get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.get('superAdmin', false) == true
+          || !('role' in get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data)
+          || get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.role == 'admin');
+    }
+
+    function isModerator() {
+      return verifiedUser()
+        && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.active == true
+        && get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.get('superAdmin', false) == false
+        && get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.get('role', '') == 'moderator';
+    }
+
+    function isAdminOrModerator() {
+      return isAdmin() || isModerator();
     }
 
     function isSuperAdmin() {
@@ -78,6 +93,30 @@ service cloud.firestore {
         && request.resource.data.membershipUpdatedAt is string;
     }
 
+    function validAdminApprovedApplicantCreate(uid) {
+      let applicationBefore = get(/databases/$(database)/documents/membershipApplications/$(uid)).data;
+      let applicationAfter = getAfter(/databases/$(database)/documents/membershipApplications/$(uid)).data;
+      return isAdmin()
+        && applicationBefore.applicationStatus == 'Awaiting Board Decision'
+        && applicationAfter.applicationStatus == 'Approved'
+        && applicationAfter.reviewedBy == request.auth.uid
+        && request.resource.data.keys().hasOnly([
+          'firstName', 'lastName', 'preferredName', 'email',
+          'membershipStatus', 'membershipUpdatedAt', 'membershipUpdatedBy'
+        ])
+        && request.resource.data.keys().hasAll([
+          'firstName', 'lastName', 'preferredName', 'email',
+          'membershipStatus', 'membershipUpdatedAt', 'membershipUpdatedBy'
+        ])
+        && request.resource.data.firstName == applicationAfter.firstName
+        && request.resource.data.lastName == applicationAfter.lastName
+        && request.resource.data.get('preferredName', '') == applicationAfter.get('preferredName', '')
+        && request.resource.data.email == applicationAfter.email
+        && request.resource.data.membershipStatus == 'Pending Dues'
+        && request.resource.data.membershipUpdatedBy == request.auth.uid
+        && request.resource.data.membershipUpdatedAt is string;
+    }
+
     function memberFacingStatus(privateStatus) {
       return privateStatus in ['Active', 'Renewals Pending']
         ? 'Active'
@@ -90,7 +129,7 @@ service cloud.firestore {
       return request.resource.data.keys().hasOnly([
         'uid', 'firstName', 'lastName', 'displayName', 'preferredName',
         'locationVisibility', 'location', 'aboutVisibility', 'about',
-        'email', 'phone', 'wbaRoles', 'membershipStatus', 'membershipType',
+        'email', 'phone', 'wbaRoles', 'portalRole', 'membershipStatus', 'membershipType',
         'memberId', 'membershipStartDate', 'membershipCurrentThrough',
         'sponsorEligible', 'dogSports', 'profilePhotoPath',
         'profilePhotoUpdatedAt', 'updatedAt'
@@ -100,6 +139,7 @@ service cloud.firestore {
     function validAdminProfileCreate(uid) {
       let privateData = getAfter(/databases/$(database)/documents/users/$(uid)).data;
       return publicProfileKeysOnly()
+        && !('portalRole' in request.resource.data)
         && request.resource.data.uid == uid
         && request.resource.data.membershipStatus == memberFacingStatus(privateData.get('membershipStatus', ''))
         && request.resource.data.sponsorEligible == (privateData.get('membershipStatus', '') == 'Active')
@@ -118,7 +158,9 @@ service cloud.firestore {
           : !('about' in request.resource.data))
         && (privateData.get('privacy', {}).get('preferredName', 'members') == 'private'
           ? !('preferredName' in request.resource.data)
-          : request.resource.data.get('preferredName', null) == privateData.get('preferredName', null));
+          : (privateData.get('preferredName', '') == ''
+              ? !('preferredName' in request.resource.data)
+              : request.resource.data.get('preferredName', null) == privateData.get('preferredName', null)));
     }
 
     function validAdminProfileUpdate(uid) {
@@ -136,9 +178,46 @@ service cloud.firestore {
         && request.resource.data.get('membershipCurrentThrough', null) == privateData.get('membershipCurrentThrough', null);
     }
 
+    function validPortalRoleProfileUpdate(uid) {
+      let roleAfter = existsAfter(/databases/$(database)/documents/adminUsers/$(uid))
+        ? getAfter(/databases/$(database)/documents/adminUsers/$(uid)).data.get('role', 'admin')
+        : 'member';
+      return isAdmin()
+        && uid != request.auth.uid
+        && !isSuperAdminAccount(uid)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['portalRole'])
+        && (roleAfter in ['admin', 'moderator']
+          ? request.resource.data.get('portalRole', '') == roleAfter
+          : !('portalRole' in request.resource.data));
+    }
+
+    function validManagedPortalAuthorization(uid) {
+      return isAdmin()
+        && uid != request.auth.uid
+        && !isSuperAdminAccount(uid)
+        && exists(/databases/$(database)/documents/users/$(uid))
+        && request.resource.data.keys().hasOnly(['active', 'role'])
+        && request.resource.data.active == true
+        && request.resource.data.role in ['admin', 'moderator']
+        && getAfter(/databases/$(database)/documents/memberProfiles/$(uid)).data.get('portalRole', '')
+          == request.resource.data.role;
+    }
+
+    function validManagedPortalAuthorizationDelete(uid) {
+      return isAdmin()
+        && uid != request.auth.uid
+        && resource.data.get('superAdmin', false) == false
+        && !('portalRole' in getAfter(/databases/$(database)/documents/memberProfiles/$(uid)).data);
+    }
+
     function validOwnerSponsorEligibility(uid) {
       return request.resource.data.sponsorEligible
         == (getAfter(/databases/$(database)/documents/users/$(uid)).data.get('membershipStatus', '') == 'Active');
+    }
+
+    function ownerPortalRoleUnchanged() {
+      return request.resource.data.get('portalRole', null)
+        == resource.data.get('portalRole', null);
     }
 
     function applicationKeysOnly() {
@@ -496,7 +575,9 @@ service cloud.firestore {
 
     function validMembershipHistoryEntry(memberUid) {
       let field = request.resource.data.field;
-      let beforeData = get(/databases/$(database)/documents/users/$(memberUid)).data;
+      let beforeData = exists(/databases/$(database)/documents/users/$(memberUid))
+        ? get(/databases/$(database)/documents/users/$(memberUid)).data
+        : {};
       let afterData = getAfter(/databases/$(database)/documents/users/$(memberUid)).data;
       return request.resource.data.category == 'membership'
         && request.resource.data.source in ['Admin Membership', 'Admin Application Review']
@@ -556,6 +637,24 @@ service cloud.firestore {
         );
     }
 
+    function validPortalRoleHistoryEntry(memberUid) {
+      let beforeRole = exists(/databases/$(database)/documents/adminUsers/$(memberUid))
+        ? (get(/databases/$(database)/documents/adminUsers/$(memberUid)).data.get('superAdmin', false) == true
+          ? 'superAdmin'
+          : get(/databases/$(database)/documents/adminUsers/$(memberUid)).data.get('role', 'admin'))
+        : 'member';
+      let afterRole = existsAfter(/databases/$(database)/documents/adminUsers/$(memberUid))
+        ? getAfter(/databases/$(database)/documents/adminUsers/$(memberUid)).data.get('role', 'admin')
+        : 'member';
+      return request.resource.data.category == 'administration'
+        && request.resource.data.source == 'Admin Member Management'
+        && request.resource.data.action == 'PORTAL_ROLE_CHANGED'
+        && request.resource.data.field == 'portalRole'
+        && request.resource.data.oldValue == beforeRole
+        && request.resource.data.newValue == afterRole
+        && beforeRole != afterRole;
+    }
+
     function validMemberHistoryEntry(memberUid) {
       return request.resource.data.keys().hasOnly([
           'memberUid', 'action', 'category', 'performedAt', 'performedBy',
@@ -582,18 +681,20 @@ service cloud.firestore {
         && request.resource.data.source is string
         && (request.resource.data.note == null || request.resource.data.note is string)
         && (validMembershipHistoryEntry(memberUid)
-          || validApplicationHistoryEntry(memberUid));
+          || validApplicationHistoryEntry(memberUid)
+          || validPortalRoleHistoryEntry(memberUid));
     }
 
     match /users/{uid} {
-      allow create: if verifiedUser()
-        && request.auth.uid == uid
-        && !isSuperAdminAccount(uid)
-        && !request.resource.data.keys().hasAny([
-          'memberId', 'membershipStatus', 'membershipType',
-          'membershipStartDate', 'membershipCurrentThrough',
-          'membershipUpdatedAt', 'membershipUpdatedBy'
-        ]);
+      allow create: if (verifiedUser()
+          && request.auth.uid == uid
+          && !isSuperAdminAccount(uid)
+          && !request.resource.data.keys().hasAny([
+            'memberId', 'membershipStatus', 'membershipType',
+            'membershipStartDate', 'membershipCurrentThrough',
+            'membershipUpdatedAt', 'membershipUpdatedBy'
+          ]))
+        || validAdminApprovedApplicantCreate(uid);
       allow get: if (signedIn() && request.auth.uid == uid)
         || (verifiedUser() && isAdmin()
           && (!isSuperAdminAccount(uid) || isSuperAdmin()));
@@ -615,6 +716,7 @@ service cloud.firestore {
       allow create: if verifiedUser() && (
         (request.auth.uid == uid
           && !isSuperAdminAccount(uid)
+          && !('portalRole' in request.resource.data)
           && validOwnerSponsorEligibility(uid))
         || (isAdmin()
           && (!isSuperAdminAccount(uid) || isSuperAdmin())
@@ -623,18 +725,22 @@ service cloud.firestore {
       allow update: if verifiedUser() && (
         (request.auth.uid == uid
           && !isSuperAdminAccount(uid)
+          && ownerPortalRoleUnchanged()
           && validOwnerSponsorEligibility(uid))
         || (isAdmin()
           && (!isSuperAdminAccount(uid) || isSuperAdmin())
           && validAdminProfileUpdate(uid))
+        || validPortalRoleProfileUpdate(uid)
       );
       allow delete: if verifiedUser() && request.auth.uid == uid;
     }
 
     match /adminUsers/{uid} {
-      allow get: if verifiedUser() && (request.auth.uid == uid || isSuperAdmin());
+      allow get: if verifiedUser() && (request.auth.uid == uid
+        || (isAdmin() && (!isSuperAdminAccount(uid) || isSuperAdmin())));
       allow list: if false;
-      allow write: if false;
+      allow create, update: if validManagedPortalAuthorization(uid);
+      allow delete: if validManagedPortalAuthorizationDelete(uid);
     }
 
     match /membershipApplications/{uid} {

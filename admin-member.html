@@ -57,6 +57,23 @@
                 </form>
             </section>
 
+            <section class="admin-detail-card" aria-labelledby="portalAccessHeading">
+                <h3 id="portalAccessHeading">Portal Access</h3>
+                <p>Current Access Level: <strong id="adminPortalAccessCurrent">Regular Member</strong></p>
+                <div id="adminPortalAccessEditor">
+                    <div class="form-field">
+                        <label for="adminPortalAccessLevel">Access Level</label>
+                        <select id="adminPortalAccessLevel">
+                            <option value="member">Regular Member</option>
+                            <option value="moderator">Moderator</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <button type="button" id="adminSavePortalAccessButton">Save Access Level</button>
+                </div>
+                <p id="adminPortalAccessMessage" role="status"></p>
+            </section>
+
             <section class="admin-detail-card" aria-labelledby="accountActionsHeading">
                 <h3 id="accountActionsHeading">Account Actions</h3>
                 <p>Send the member a password-reset email. The member will choose their own new password.</p>
