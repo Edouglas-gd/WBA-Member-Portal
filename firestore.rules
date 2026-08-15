@@ -1,0 +1,565 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function verifiedUser() {
+      return signedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return verifiedUser()
+        && exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid))
+        && get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.active == true;
+    }
+
+    function isSuperAdmin() {
+      return isAdmin()
+        && get(/databases/$(database)/documents/adminUsers/$(request.auth.uid)).data.get('superAdmin', false) == true;
+    }
+
+    function isSuperAdminAccount(uid) {
+      return exists(/databases/$(database)/documents/adminUsers/$(uid))
+        && get(/databases/$(database)/documents/adminUsers/$(uid)).data.active == true
+        && get(/databases/$(database)/documents/adminUsers/$(uid)).data.get('superAdmin', false) == true;
+    }
+
+    function ownerMembershipFieldsUnchanged() {
+      return request.resource.data.get('memberId', null) == resource.data.get('memberId', null)
+        && request.resource.data.get('membershipStatus', null) == resource.data.get('membershipStatus', null)
+        && request.resource.data.get('membershipType', null) == resource.data.get('membershipType', null)
+        && request.resource.data.get('membershipStartDate', null) == resource.data.get('membershipStartDate', null)
+        && request.resource.data.get('membershipCurrentThrough', null) == resource.data.get('membershipCurrentThrough', null)
+        && request.resource.data.get('membershipUpdatedAt', null) == resource.data.get('membershipUpdatedAt', null)
+        && request.resource.data.get('membershipUpdatedBy', null) == resource.data.get('membershipUpdatedBy', null);
+    }
+
+    function validAdminMembershipUpdate() {
+      return request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+        'memberId',
+        'membershipStatus',
+        'membershipType',
+        'membershipStartDate',
+        'membershipCurrentThrough',
+        'membershipUpdatedAt',
+        'membershipUpdatedBy'
+      ])
+      && request.resource.data.get('membershipStatus', '') in [
+        '', 'Active', 'Renewals Pending', 'Past Due', 'Archived',
+        'Pending Application', 'Pending Dues', 'Suspended', 'Expelled'
+      ]
+      && request.resource.data.get('membershipType', '') in [
+        '', 'Individual', 'Joint', 'Junior', 'Foreign'
+      ]
+      && request.resource.data.membershipUpdatedBy == request.auth.uid
+      && request.resource.data.membershipUpdatedAt is string;
+    }
+
+    function memberFacingStatus(privateStatus) {
+      return privateStatus in ['Active', 'Renewals Pending']
+        ? 'Active'
+        : privateStatus in ['Past Due', 'Archived', 'Suspended', 'Expelled']
+          ? 'Inactive'
+          : 'No Membership';
+    }
+
+    function publicProfileKeysOnly() {
+      return request.resource.data.keys().hasOnly([
+        'uid', 'firstName', 'lastName', 'displayName', 'preferredName',
+        'locationVisibility', 'location', 'aboutVisibility', 'about',
+        'email', 'phone', 'wbaRoles', 'membershipStatus', 'membershipType',
+        'memberId', 'membershipStartDate', 'membershipCurrentThrough',
+        'sponsorEligible', 'dogSports', 'profilePhotoPath',
+        'profilePhotoUpdatedAt', 'updatedAt'
+      ]);
+    }
+
+    function validAdminProfileCreate(uid) {
+      let privateData = getAfter(/databases/$(database)/documents/users/$(uid)).data;
+      return publicProfileKeysOnly()
+        && request.resource.data.uid == uid
+        && request.resource.data.membershipStatus == memberFacingStatus(privateData.get('membershipStatus', ''))
+        && request.resource.data.sponsorEligible == (privateData.get('membershipStatus', '') == 'Active')
+        && request.resource.data.get('memberId', null) == privateData.get('memberId', null)
+        && request.resource.data.get('membershipType', null) == privateData.get('membershipType', null)
+        && request.resource.data.get('membershipStartDate', null) == privateData.get('membershipStartDate', null)
+        && request.resource.data.get('membershipCurrentThrough', null) == privateData.get('membershipCurrentThrough', null)
+        && (privateData.get('privacy', {}).get('email', '') == 'members'
+          ? request.resource.data.get('email', null) == privateData.get('email', null)
+          : !('email' in request.resource.data))
+        && (privateData.get('privacy', {}).get('phone', '') == 'members'
+          ? request.resource.data.get('phone', null) == privateData.get('phone', null)
+          : !('phone' in request.resource.data))
+        && (privateData.get('privacy', {}).get('about', '') == 'members'
+          ? request.resource.data.get('about', null) == privateData.get('about', null)
+          : !('about' in request.resource.data))
+        && (privateData.get('privacy', {}).get('preferredName', 'members') == 'private'
+          ? !('preferredName' in request.resource.data)
+          : request.resource.data.get('preferredName', null) == privateData.get('preferredName', null));
+    }
+
+    function validAdminProfileUpdate(uid) {
+      let privateData = getAfter(/databases/$(database)/documents/users/$(uid)).data;
+      return publicProfileKeysOnly()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'membershipStatus', 'membershipType', 'memberId',
+          'membershipStartDate', 'membershipCurrentThrough', 'sponsorEligible'
+        ])
+        && request.resource.data.membershipStatus == memberFacingStatus(privateData.get('membershipStatus', ''))
+        && request.resource.data.sponsorEligible == (privateData.get('membershipStatus', '') == 'Active')
+        && request.resource.data.get('memberId', null) == privateData.get('memberId', null)
+        && request.resource.data.get('membershipType', null) == privateData.get('membershipType', null)
+        && request.resource.data.get('membershipStartDate', null) == privateData.get('membershipStartDate', null)
+        && request.resource.data.get('membershipCurrentThrough', null) == privateData.get('membershipCurrentThrough', null);
+    }
+
+    function validOwnerSponsorEligibility(uid) {
+      return request.resource.data.sponsorEligible
+        == (getAfter(/databases/$(database)/documents/users/$(uid)).data.get('membershipStatus', '') == 'Active');
+    }
+
+    function applicationKeysOnly() {
+      return request.resource.data.keys().hasOnly([
+        'applicantUid', 'applicationStatus', 'membershipYear', 'dateOfBirth',
+        'firstName', 'lastName', 'preferredName', 'email', 'phone',
+        'address', 'city', 'state', 'zip', 'country',
+        'countryCode', 'countryName', 'subdivisionCode', 'subdivisionName',
+        'membershipType', 'membershipDuesAmount',
+        'sponsorUserId', 'sponsorDisplayName', 'sponsorRequested',
+        'bylawsAccepted', 'codeOfEthicsAccepted', 'communicationsConsent',
+        'animalOrganizations', 'disciplineHistory', 'disciplineExplanation',
+        'ownsBeauceron', 'dogSports',
+        'sponsorAssignedAt', 'sponsorAssignedBy', 'declineReason',
+        'adminReviewedAt', 'adminReviewedBy',
+        'createdAt', 'updatedAt', 'submittedAt',
+        'reviewedAt', 'reviewedBy'
+      ]);
+    }
+
+    function validApplicationDogSports() {
+      return request.resource.data.dogSports is list
+        && request.resource.data.dogSports.hasOnly([
+          'scent-work', 'igp', 'french-ring', 'mondioring', 'psa', 'herding',
+          'search-and-rescue', 'tracking', 'mantrailing', 'joring-canicross',
+          'obedience', 'rally', 'agility', 'dock-diving',
+          'fast-cat-lure-coursing', 'barn-hunt', 'disc-dog', 'flyball',
+          'weight-pull', 'conformation', 'service-dog-training', 'trick-dog',
+          'farm-stock-work', 'hunting-field-work'
+        ]);
+    }
+
+    function validApplicationBase(uid) {
+      return applicationKeysOnly()
+        && request.resource.data.applicantUid == uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.membershipType in ['', 'Individual', 'Joint', 'Junior', 'Foreign']
+        && request.resource.data.membershipYear is int
+        && (request.resource.data.membershipDuesAmount == null
+          || request.resource.data.membershipDuesAmount is number)
+        && request.resource.data.dateOfBirth is string
+        && request.resource.data.countryCode is string
+        && request.resource.data.countryName is string
+        && request.resource.data.subdivisionCode is string
+        && request.resource.data.subdivisionName is string
+        && request.resource.data.sponsorRequested is bool
+        && request.resource.data.bylawsAccepted is bool
+        && request.resource.data.codeOfEthicsAccepted is bool
+        && request.resource.data.communicationsConsent is bool
+        && request.resource.data.animalOrganizations is string
+        && (request.resource.data.disciplineHistory == null
+          || request.resource.data.disciplineHistory is bool)
+        && (request.resource.data.ownsBeauceron == null
+          || request.resource.data.ownsBeauceron is bool)
+        && validApplicationDogSports()
+        && request.resource.data.createdAt is string
+        && request.resource.data.updatedAt is string;
+    }
+
+    function fallbackMembershipDues(membershipType) {
+      return membershipType == 'Individual'
+        ? 35
+        : membershipType == 'Joint'
+          ? 65
+          : membershipType == 'Foreign'
+            ? 35
+            : null;
+    }
+
+    function validCurrentMembershipPricing() {
+      let membershipType = request.resource.data.membershipType;
+      return exists(/databases/$(database)/documents/membershipConfig/current)
+        ? get(/databases/$(database)/documents/membershipConfig/current).data.membershipTypes.get(membershipType, {}).get('active', false) == true
+          && request.resource.data.membershipDuesAmount
+            == get(/databases/$(database)/documents/membershipConfig/current).data.membershipTypes.get(membershipType, {}).get('annualDues', null)
+        : request.resource.data.membershipDuesAmount == fallbackMembershipDues(membershipType);
+    }
+
+    function validDraftSponsorState() {
+      return request.resource.data.sponsorRequested == true
+        ? !('sponsorUserId' in request.resource.data)
+          && !('sponsorDisplayName' in request.resource.data)
+        : (
+          (!('sponsorUserId' in request.resource.data)
+            && !('sponsorDisplayName' in request.resource.data))
+          || (request.resource.data.sponsorUserId is string
+            && request.resource.data.sponsorUserId.size() > 0
+            && request.resource.data.sponsorDisplayName is string
+            && request.resource.data.sponsorDisplayName.size() > 0)
+        );
+    }
+
+    function validSubmittedSponsor(uid) {
+      return request.resource.data.sponsorRequested == true
+        ? !('sponsorUserId' in request.resource.data)
+          && !('sponsorDisplayName' in request.resource.data)
+        : request.resource.data.sponsorUserId is string
+          && request.resource.data.sponsorUserId.size() > 0
+          && request.resource.data.sponsorUserId != uid
+          && request.resource.data.sponsorDisplayName is string
+          && request.resource.data.sponsorDisplayName.size() > 0
+          && exists(/databases/$(database)/documents/users/$(request.resource.data.sponsorUserId))
+          && get(/databases/$(database)/documents/users/$(request.resource.data.sponsorUserId)).data.get('membershipStatus', '') == 'Active';
+    }
+
+    function validApplicationSubmission(uid) {
+      return validApplicationBase(uid)
+        && request.resource.data.applicationStatus == 'Submitted'
+        && request.resource.data.submittedAt is string
+        && request.resource.data.firstName is string
+        && request.resource.data.firstName.size() > 0
+        && request.resource.data.lastName is string
+        && request.resource.data.lastName.size() > 0
+        && request.resource.data.email.size() > 0
+        && request.resource.data.phone is string
+        && request.resource.data.phone.size() > 0
+        && request.resource.data.address is string
+        && request.resource.data.address.size() > 0
+        && request.resource.data.city is string
+        && request.resource.data.city.size() > 0
+        && request.resource.data.zip is string
+        && request.resource.data.zip.size() > 0
+        && request.resource.data.countryCode.size() == 2
+        && request.resource.data.countryName.size() > 0
+        && (request.resource.data.countryCode in ['US', 'CA', 'AU', 'GB']
+          ? request.resource.data.subdivisionCode.size() > 0
+            && request.resource.data.subdivisionName.size() > 0
+          : true)
+        && request.resource.data.membershipType in ['Individual', 'Joint', 'Junior', 'Foreign']
+        && validCurrentMembershipPricing()
+        && (request.resource.data.countryCode in ['US', 'CA']
+          ? request.resource.data.membershipType != 'Foreign'
+          : request.resource.data.membershipType == 'Foreign')
+        && (request.resource.data.membershipType != 'Junior'
+          || request.resource.data.dateOfBirth.matches('^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))
+        && request.resource.data.bylawsAccepted == true
+        && request.resource.data.codeOfEthicsAccepted == true
+        && request.resource.data.disciplineHistory is bool
+        && request.resource.data.ownsBeauceron is bool
+        && validSubmittedSponsor(uid)
+        && !('sponsorAssignedAt' in request.resource.data)
+        && !('sponsorAssignedBy' in request.resource.data)
+        && !('declineReason' in request.resource.data)
+        && !('adminReviewedAt' in request.resource.data)
+        && !('adminReviewedBy' in request.resource.data)
+        && !('reviewedAt' in request.resource.data)
+        && !('reviewedBy' in request.resource.data)
+        && (request.resource.data.disciplineHistory == false
+          || request.resource.data.disciplineExplanation.size() > 0);
+    }
+
+    function validApplicationDraft(uid) {
+      return validApplicationBase(uid)
+        && request.resource.data.applicationStatus == 'Draft'
+        && (request.resource.data.membershipType == '' || validCurrentMembershipPricing())
+        && validDraftSponsorState()
+        && !('submittedAt' in request.resource.data)
+        && !('adminReviewedAt' in request.resource.data)
+        && !('adminReviewedBy' in request.resource.data)
+        && !('reviewedAt' in request.resource.data)
+        && !('reviewedBy' in request.resource.data);
+    }
+
+    function validAdminSponsorAssignment(uid) {
+      return isAdmin()
+        && resource.data.applicationStatus in ['Submitted', 'Awaiting Board Decision']
+        && request.resource.data.applicationStatus == resource.data.applicationStatus
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'sponsorUserId', 'sponsorDisplayName', 'sponsorRequested',
+          'sponsorAssignedAt', 'sponsorAssignedBy'
+        ])
+        && request.resource.data.sponsorRequested == false
+        && request.resource.data.sponsorUserId is string
+        && request.resource.data.sponsorUserId.size() > 0
+        && request.resource.data.sponsorUserId != uid
+        && request.resource.data.sponsorDisplayName is string
+        && request.resource.data.sponsorDisplayName.size() > 0
+        && request.resource.data.sponsorAssignedAt is string
+        && request.resource.data.sponsorAssignedBy == request.auth.uid
+        && exists(/databases/$(database)/documents/users/$(request.resource.data.sponsorUserId))
+        && get(/databases/$(database)/documents/users/$(request.resource.data.sponsorUserId)).data.get('membershipStatus', '') == 'Active';
+    }
+
+    function validAdminBoardReadiness(uid) {
+      return resource.data.firstName is string
+        && resource.data.firstName.size() > 0
+        && resource.data.lastName is string
+        && resource.data.lastName.size() > 0
+        && resource.data.email is string
+        && resource.data.email.size() > 0
+        && resource.data.phone is string
+        && resource.data.phone.size() > 0
+        && resource.data.address is string
+        && resource.data.address.size() > 0
+        && resource.data.city is string
+        && resource.data.city.size() > 0
+        && resource.data.zip is string
+        && resource.data.zip.size() > 0
+        && resource.data.countryCode is string
+        && resource.data.countryCode.size() == 2
+        && resource.data.membershipType in ['Individual', 'Joint', 'Junior', 'Foreign']
+        && (resource.data.countryCode in ['US', 'CA']
+          ? resource.data.membershipType != 'Foreign'
+          : resource.data.membershipType == 'Foreign')
+        && resource.data.bylawsAccepted == true
+        && resource.data.codeOfEthicsAccepted == true
+        && resource.data.disciplineHistory is bool
+        && (resource.data.disciplineHistory == false
+          || (resource.data.disciplineExplanation is string
+            && resource.data.disciplineExplanation.size() > 0))
+        && resource.data.ownsBeauceron is bool
+        && resource.data.sponsorRequested == false
+        && resource.data.sponsorUserId is string
+        && resource.data.sponsorUserId.size() > 0
+        && resource.data.sponsorUserId != uid
+        && exists(/databases/$(database)/documents/users/$(resource.data.sponsorUserId))
+        && get(/databases/$(database)/documents/users/$(resource.data.sponsorUserId)).data.get('membershipStatus', '') == 'Active';
+    }
+
+    function validAdminSendToBoard(uid) {
+      return isAdmin()
+        && resource.data.applicationStatus == 'Submitted'
+        && request.resource.data.applicationStatus == 'Awaiting Board Decision'
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'applicationStatus', 'adminReviewedAt', 'adminReviewedBy'
+        ])
+        && request.resource.data.adminReviewedAt is string
+        && request.resource.data.adminReviewedBy == request.auth.uid
+        && validAdminBoardReadiness(uid);
+    }
+
+    function validAdminApplicationDecision(uid) {
+      return isAdmin()
+        && resource.data.applicationStatus == 'Awaiting Board Decision'
+        && request.resource.data.applicationStatus in ['Approved', 'Declined']
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'applicationStatus', 'reviewedAt', 'reviewedBy', 'declineReason'
+        ])
+        && request.resource.data.reviewedAt is string
+        && request.resource.data.reviewedBy == request.auth.uid
+        && (request.resource.data.applicationStatus == 'Approved'
+          ? validAdminBoardReadiness(uid)
+            && getAfter(/databases/$(database)/documents/users/$(uid)).data.get('membershipStatus', '') == 'Pending Dues'
+            && getAfter(/databases/$(database)/documents/memberProfiles/$(uid)).data.get('membershipStatus', '') == 'No Membership'
+            && getAfter(/databases/$(database)/documents/memberProfiles/$(uid)).data.get('sponsorEligible', true) == false
+            && !('declineReason' in request.resource.data)
+          : request.resource.data.declineReason is string
+            && request.resource.data.declineReason.size() > 0);
+    }
+
+    function validMembershipHistoryEntry(memberUid) {
+      let field = request.resource.data.field;
+      let beforeData = get(/databases/$(database)/documents/users/$(memberUid)).data;
+      let afterData = getAfter(/databases/$(database)/documents/users/$(memberUid)).data;
+      return request.resource.data.category == 'membership'
+        && request.resource.data.source in ['Admin Membership', 'Admin Application Review']
+        && (
+          (request.resource.data.action == 'MEMBER_ID_CHANGED' && field == 'memberId')
+          || (request.resource.data.action == 'MEMBERSHIP_STATUS_CHANGED' && field == 'membershipStatus')
+          || (request.resource.data.action == 'MEMBERSHIP_TYPE_CHANGED' && field == 'membershipType')
+          || (request.resource.data.action == 'MEMBERSHIP_START_DATE_CHANGED' && field == 'membershipStartDate')
+          || (request.resource.data.action == 'MEMBERSHIP_CURRENT_THROUGH_CHANGED' && field == 'membershipCurrentThrough')
+        )
+        && request.resource.data.oldValue == beforeData.get(field, null)
+        && request.resource.data.newValue == afterData.get(field, null)
+        && request.resource.data.oldValue != request.resource.data.newValue
+        && afterData.membershipUpdatedBy == request.auth.uid;
+    }
+
+    function validApplicationHistoryEntry(memberUid) {
+      let beforeData = get(/databases/$(database)/documents/membershipApplications/$(memberUid)).data;
+      let afterData = getAfter(/databases/$(database)/documents/membershipApplications/$(memberUid)).data;
+      return request.resource.data.category == 'application'
+        && request.resource.data.source == 'Admin Application Review'
+        && (
+          (request.resource.data.action == 'APPLICATION_SPONSOR_ASSIGNED'
+            && request.resource.data.field == 'sponsorUserId'
+            && request.resource.data.oldValue == beforeData.get('sponsorUserId', null)
+            && request.resource.data.newValue == afterData.get('sponsorUserId', null)
+            && request.resource.data.oldValue != request.resource.data.newValue
+            && afterData.sponsorAssignedBy == request.auth.uid)
+          || (request.resource.data.action == 'APPLICATION_SENT_TO_BOARD'
+            && request.resource.data.field == 'applicationStatus'
+            && request.resource.data.oldValue == 'Submitted'
+            && request.resource.data.newValue == 'Awaiting Board Decision'
+            && beforeData.applicationStatus == request.resource.data.oldValue
+            && afterData.applicationStatus == request.resource.data.newValue
+            && afterData.adminReviewedBy == request.auth.uid)
+          || (request.resource.data.action == 'APPLICATION_APPROVED'
+            && request.resource.data.field == 'applicationStatus'
+            && request.resource.data.oldValue == 'Awaiting Board Decision'
+            && request.resource.data.newValue == 'Approved'
+            && beforeData.applicationStatus == request.resource.data.oldValue
+            && afterData.applicationStatus == request.resource.data.newValue
+            && afterData.reviewedBy == request.auth.uid)
+          || (request.resource.data.action == 'APPLICATION_DECLINED'
+            && request.resource.data.field == 'applicationStatus'
+            && request.resource.data.oldValue == 'Awaiting Board Decision'
+            && request.resource.data.newValue == 'Declined'
+            && beforeData.applicationStatus == request.resource.data.oldValue
+            && afterData.applicationStatus == request.resource.data.newValue
+            && afterData.reviewedBy == request.auth.uid)
+        );
+    }
+
+    function validMemberHistoryEntry(memberUid) {
+      return request.resource.data.keys().hasOnly([
+          'memberUid', 'action', 'category', 'performedAt', 'performedBy',
+          'field', 'oldValue', 'newValue', 'source', 'note'
+        ])
+        && request.resource.data.keys().hasAll([
+          'memberUid', 'action', 'category', 'performedAt', 'performedBy',
+          'field', 'oldValue', 'newValue', 'source', 'note'
+        ])
+        && request.resource.data.memberUid == memberUid
+        && request.resource.data.performedBy == request.auth.uid
+        && request.resource.data.performedAt == request.time
+        && request.resource.data.action is string
+        && request.resource.data.category is string
+        && request.resource.data.field is string
+        && (request.resource.data.oldValue == null
+          || request.resource.data.oldValue is string
+          || request.resource.data.oldValue is number)
+        && (request.resource.data.newValue == null
+          || request.resource.data.newValue is string
+          || request.resource.data.newValue is number)
+        && request.resource.data.source is string
+        && (request.resource.data.note == null || request.resource.data.note is string)
+        && (validMembershipHistoryEntry(memberUid)
+          || validApplicationHistoryEntry(memberUid));
+    }
+
+    match /users/{uid} {
+      allow create: if verifiedUser()
+        && request.auth.uid == uid
+        && !isSuperAdminAccount(uid)
+        && !request.resource.data.keys().hasAny([
+          'memberId', 'membershipStatus', 'membershipType',
+          'membershipStartDate', 'membershipCurrentThrough',
+          'membershipUpdatedAt', 'membershipUpdatedBy'
+        ]);
+      allow get: if (signedIn() && request.auth.uid == uid)
+        || (verifiedUser() && isAdmin()
+          && (!isSuperAdminAccount(uid) || isSuperAdmin()));
+      allow list: if verifiedUser() && isAdmin();
+      allow update: if verifiedUser() && (
+        (request.auth.uid == uid
+          && !isSuperAdminAccount(uid)
+          && ownerMembershipFieldsUnchanged())
+        || (isAdmin()
+          && (!isSuperAdminAccount(uid) || isSuperAdmin())
+          && validAdminMembershipUpdate())
+      );
+      allow delete: if false;
+    }
+
+    match /memberProfiles/{uid} {
+      allow read: if signedIn();
+      allow create: if verifiedUser() && (
+        (request.auth.uid == uid
+          && !isSuperAdminAccount(uid)
+          && validOwnerSponsorEligibility(uid))
+        || (isAdmin()
+          && (!isSuperAdminAccount(uid) || isSuperAdmin())
+          && validAdminProfileCreate(uid))
+      );
+      allow update: if verifiedUser() && (
+        (request.auth.uid == uid
+          && !isSuperAdminAccount(uid)
+          && validOwnerSponsorEligibility(uid))
+        || (isAdmin()
+          && (!isSuperAdminAccount(uid) || isSuperAdmin())
+          && validAdminProfileUpdate(uid))
+      );
+      allow delete: if verifiedUser() && request.auth.uid == uid;
+    }
+
+    match /adminUsers/{uid} {
+      allow get: if verifiedUser() && (request.auth.uid == uid || isSuperAdmin());
+      allow list: if false;
+      allow write: if false;
+    }
+
+    match /membershipApplications/{uid} {
+      allow get: if (signedIn() && request.auth.uid == uid)
+        || (verifiedUser() && isAdmin()
+          && (!isSuperAdminAccount(uid) || isSuperAdmin()));
+      allow list: if verifiedUser() && isAdmin();
+
+      allow create: if signedIn()
+        && request.auth.uid == uid
+        && !isSuperAdminAccount(uid)
+        && (
+          validApplicationDraft(uid)
+          || (verifiedUser() && validApplicationSubmission(uid))
+        );
+
+      allow update: if signedIn()
+        && (
+          (request.auth.uid == uid
+            && !isSuperAdminAccount(uid)
+            && resource.data.applicationStatus == 'Draft'
+            && (validApplicationDraft(uid)
+              || (verifiedUser() && validApplicationSubmission(uid))))
+          || validAdminSponsorAssignment(uid)
+          || validAdminSendToBoard(uid)
+          || validAdminApplicationDecision(uid)
+        );
+
+      allow delete: if false;
+    }
+
+    match /memberHistory/{memberUid}/entries/{entryId} {
+      allow read: if isSuperAdmin();
+      allow create: if isAdmin() && validMemberHistoryEntry(memberUid);
+      allow update, delete: if false;
+    }
+
+    function validMembershipTypeConfig(typeConfig) {
+      return typeConfig is map
+        && typeConfig.keys().hasOnly(['active', 'annualDues', 'displayName', 'description'])
+        && typeConfig.active is bool
+        && (typeConfig.annualDues == null || typeConfig.annualDues is number)
+        && typeConfig.displayName is string
+        && typeConfig.description is string;
+    }
+
+    function validMembershipConfig() {
+      return request.resource.data.keys().hasOnly(['membershipTypes', 'updatedAt', 'updatedBy'])
+        && request.resource.data.membershipTypes is map
+        && request.resource.data.membershipTypes.keys().hasOnly(['Individual', 'Joint', 'Junior', 'Foreign'])
+        && validMembershipTypeConfig(request.resource.data.membershipTypes.Individual)
+        && validMembershipTypeConfig(request.resource.data.membershipTypes.Joint)
+        && validMembershipTypeConfig(request.resource.data.membershipTypes.Junior)
+        && validMembershipTypeConfig(request.resource.data.membershipTypes.Foreign);
+    }
+
+    match /membershipConfig/{configId} {
+      allow read: if signedIn() && configId == 'current';
+      allow create, update: if configId == 'current' && isAdmin() && validMembershipConfig();
+      allow delete: if false;
+    }
+  }
+}

@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Admin Applications - WBA Member Portal</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+    <header class="app-header"><img src="images/wba-icon.png" alt="Working Beauceron Association" class="app-logo"><h1>WBA Administration</h1></header>
+    <nav class="member-nav" aria-label="Admin navigation"><a href="dashboard.html">Member Dashboard</a><a href="admin.html">Admin Dashboard</a><a href="admin-applications.html" aria-current="page">Applications</a><button type="button" id="logoutButton">Log Out</button></nav>
+    <main class="app-content admin-page">
+        <p id="adminApplicationsAccessMessage" class="profile-muted" role="status">Verifying administrator access...</p>
+        <section id="adminApplications" hidden>
+            <div class="admin-page-heading"><p class="dashboard-eyebrow">Secure administration</p><h2>Membership Applications</h2><p>Review submitted and completed membership applications.</p></div>
+            <div class="form-field admin-application-filter"><label for="applicationStatusFilter">Application Status</label><select id="applicationStatusFilter"><option value="Submitted">Pending Admin Review</option><option value="Awaiting Board Decision">Awaiting Board</option><option value="Approved">Approved</option><option value="Declined">Declined</option><option value="Reviewed">All Completed</option></select></div>
+            <p id="adminApplicationsMessage" class="profile-muted" role="status">Loading applications...</p>
+            <div id="adminApplicationList" class="admin-application-list"></div>
+            <p><a href="admin.html">Back to Admin Dashboard</a></p>
+        </section>
+    </main>
+    <script type="module" src="app.js"></script>
+</body>
+</html>

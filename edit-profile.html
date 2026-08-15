@@ -148,6 +148,22 @@
                 <section class="form-section">
                     <h3>Address</h3>
 
+                    <div class="form-row form-row-two-columns">
+                        <div class="form-field">
+                            <label for="country">Country</label>
+                            <select id="country" autocomplete="country">
+                                <option value="">Select Country</option>
+                            </select>
+                        </div>
+
+                        <div class="form-field">
+                            <label for="state">State / Province / Region</label>
+                            <select id="state" autocomplete="address-level1" disabled>
+                                <option value="">Select Country First</option>
+                            </select>
+                        </div>
+                    </div>
+
                     <div class="form-field">
                         <label for="address">Street Address</label>
                         <input type="text" id="address" autocomplete="street-address">
@@ -160,20 +176,8 @@
                         </div>
 
                         <div class="form-field">
-                            <label for="state">State / Province</label>
-                            <input type="text" id="state" autocomplete="address-level1">
-                        </div>
-                    </div>
-
-                    <div class="form-row form-row-two-columns">
-                        <div class="form-field">
                             <label for="zip">ZIP / Postal Code</label>
                             <input type="text" id="zip" autocomplete="postal-code">
-                        </div>
-
-                        <div class="form-field">
-                            <label for="country">Country</label>
-                            <input type="text" id="country" autocomplete="country-name">
                         </div>
                     </div>
 
@@ -181,8 +185,8 @@
                         <label for="locationVisibility">Location Visibility</label>
                         <select id="locationVisibility">
                             <option value="full">Full Address</option>
-                            <option value="cityState">City &amp; State / Province</option>
-                            <option value="state">State / Province Only</option>
+                            <option value="cityState">City &amp; State / Province / Region</option>
+                            <option value="state">State / Province / Region Only</option>
                             <option value="country">Country Only</option>
                             <option value="private">Private</option>
                         </select>

@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Membership Application - WBA Member Portal</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#ffffff">
+</head>
+<body>
+    <header class="app-header">
+        <img src="images/wba-icon.png" alt="Working Beauceron Association" class="app-logo">
+        <h1>WBA Member Portal</h1>
+    </header>
+
+    <main class="app-content membership-application-page">
+        <p id="membershipApplicationAccessMessage" class="profile-muted" role="status">
+            Loading your application...
+        </p>
+
+        <section id="membershipApplicationPage" hidden>
+            <div class="application-heading-card">
+                <p class="dashboard-eyebrow">Applicant Portal</p>
+                <h2>Membership Application</h2>
+                <p>Welcome to the Working Beauceron Association membership application process.</p>
+                <div class="application-status-summary">
+                    <div><span>Application Status</span><strong id="applicationStatus">Draft</strong></div>
+                    <div><span>Email Status</span><strong id="applicationEmailStatus">Checking...</strong></div>
+                </div>
+            </div>
+
+            <section class="application-verification-card" aria-labelledby="applicationVerificationHeading">
+                <p class="dashboard-eyebrow">Application Can Be Started</p>
+                <h3 id="applicationVerificationHeading">Email Verification Pending</h3>
+                <p id="applicationVerificationMessage" role="status"></p>
+                <div class="application-verification-actions">
+                    <button type="button" id="applicationResendVerificationButton">
+                        Resend Verification Email
+                    </button>
+                    <button type="button" id="applicationRefreshVerificationButton">
+                        Check Verification Status
+                    </button>
+                </div>
+            </section>
+
+            <form id="membershipApplicationForm" class="profile-form">
+                <section class="application-form-section" aria-labelledby="personalInformationHeading">
+                    <h3 id="personalInformationHeading">Personal Information</h3>
+                    <p class="field-help">Fields marked required must be completed before submission. Drafts may be saved at any time.</p>
+                    <div class="form-row form-row-two-columns">
+                        <div class="form-field"><label for="applicationFirstName">First Name <span aria-hidden="true">*</span></label><input type="text" id="applicationFirstName" autocomplete="given-name"></div>
+                        <div class="form-field"><label for="applicationLastName">Last Name <span aria-hidden="true">*</span></label><input type="text" id="applicationLastName" autocomplete="family-name"></div>
+                    </div>
+                    <div class="form-row form-row-two-columns">
+                        <div class="form-field"><label for="applicationPreferredName">Preferred Name</label><input type="text" id="applicationPreferredName"></div>
+                        <div class="form-field"><label for="applicationEmail">Email <span aria-hidden="true">*</span></label><input type="email" id="applicationEmail" autocomplete="email" readonly></div>
+                    </div>
+                    <div class="form-field"><label for="applicationDateOfBirth">Date of Birth</label><input type="date" id="applicationDateOfBirth" autocomplete="bday"><p class="field-help">Required when applying for Junior Membership. This information remains private.</p></div>
+                    <div class="form-field"><label for="applicationPhone">Phone <span aria-hidden="true">*</span></label><input type="tel" id="applicationPhone" autocomplete="tel"></div>
+                    <div class="form-row form-row-two-columns">
+                        <div class="form-field"><label for="applicationCountry">Country <span aria-hidden="true">*</span></label><select id="applicationCountry" autocomplete="country"><option value="">Select Country</option></select></div>
+                        <div class="form-field"><label for="applicationState">State / Province / Region</label><select id="applicationState" autocomplete="address-level1" disabled><option value="">Select Country First</option></select></div>
+                    </div>
+                    <div class="form-field"><label for="applicationAddress">Street Address <span aria-hidden="true">*</span></label><input type="text" id="applicationAddress" autocomplete="street-address"></div>
+                    <div class="form-row form-row-two-columns">
+                        <div class="form-field"><label for="applicationCity">City <span aria-hidden="true">*</span></label><input type="text" id="applicationCity" autocomplete="address-level2"></div>
+                        <div class="form-field"><label for="applicationZip">ZIP / Postal Code <span aria-hidden="true">*</span></label><input type="text" id="applicationZip" autocomplete="postal-code"></div>
+                    </div>
+                </section>
+
+                <section class="application-form-section" aria-labelledby="membershipTypeHeading">
+                    <h3 id="membershipTypeHeading">Membership Type</h3>
+                    <fieldset class="membership-type-fieldset"><legend>Requested Membership Type <span aria-hidden="true">*</span></legend><div id="membershipTypeCards" class="membership-type-cards"><p class="profile-muted">Loading membership options...</p></div></fieldset>
+                    <input type="hidden" id="applicationMembershipType">
+                    <p id="membershipTypeNote" class="field-help" hidden>Additional account-linking details will be handled later in the membership process.</p>
+                    <p id="membershipEligibilityMessage" class="field-help" role="status"></p>
+                </section>
+
+                <section class="application-form-section" aria-labelledby="sponsorHeading">
+                    <h3 id="sponsorHeading">Sponsor</h3>
+                    <p class="field-help">A sponsor is required. Select an eligible Active WBA member, or request help finding a sponsor.</p>
+                    <div class="form-field"><label for="sponsorSearchInput">Search Current WBA Members</label><input type="search" id="sponsorSearchInput" autocomplete="off" placeholder="Search by member name"></div>
+                    <div id="sponsorSearchResults" class="sponsor-search-results" aria-live="polite"></div>
+                    <div id="selectedSponsor" class="selected-sponsor" hidden>
+                        <span id="selectedSponsorLabel">Selected Sponsor</span>
+                        <strong id="selectedSponsorName"></strong>
+                        <button type="button" id="clearSponsorButton">Clear Sponsor</button>
+                    </div>
+                    <div class="sponsor-request-option">
+                        <p class="application-or-divider"><span>OR</span></p>
+                        <label class="checkbox-option"><input type="checkbox" id="sponsorRequested"> <span>I need help finding a sponsor.</span></label>
+                        <p class="field-help">The WBA will assist you in finding a sponsor before your application can be approved. This does not waive the sponsorship requirement.</p>
+                    </div>
+                </section>
+
+                <section class="application-form-section" aria-labelledby="animalOrganizationsHeading">
+                    <h3 id="animalOrganizationsHeading">Animal Organization Memberships</h3>
+                    <div class="form-field"><label for="animalOrganizations">Please list any other animal organizations you have been, or are currently, a member of.</label><textarea id="animalOrganizations" rows="6"></textarea></div>
+                </section>
+
+                <section class="application-form-section" aria-labelledby="disciplineHeading">
+                    <h3 id="disciplineHeading">Discipline History</h3>
+                    <fieldset class="application-fieldset"><legend>Have you previously been disciplined by a dog club, breed organization, or governing body? <span aria-hidden="true">*</span></legend><label><input type="radio" name="disciplineHistory" value="yes"> Yes</label><label><input type="radio" name="disciplineHistory" value="no"> No</label></fieldset>
+                    <div class="form-field" id="disciplineExplanationField" hidden><label for="disciplineExplanation">Please explain <span aria-hidden="true">*</span></label><textarea id="disciplineExplanation" rows="5"></textarea></div>
+                </section>
+
+                <section class="application-form-section" aria-labelledby="beauceronOwnershipHeading">
+                    <h3 id="beauceronOwnershipHeading">Beauceron Ownership</h3>
+                    <fieldset class="application-fieldset"><legend>Do you currently own a Beauceron? <span aria-hidden="true">*</span></legend><label><input type="radio" name="ownsBeauceron" value="yes"> Yes</label><label><input type="radio" name="ownsBeauceron" value="no"> No</label></fieldset>
+                </section>
+
+                <section class="application-form-section" aria-labelledby="applicationDogSportsHeading">
+                    <h3 id="applicationDogSportsHeading">Dog Sports &amp; Activities / Current Training</h3>
+                    <p>What dog sports, training, or activities do you currently participate in?</p>
+                    <p class="field-help">Select all that apply.</p>
+                    <div id="applicationDogSportsCheckboxGrid" class="checkbox-grid"></div>
+                </section>
+
+                <section class="application-form-section" aria-labelledby="agreementsHeading">
+                    <h3 id="agreementsHeading">Agreements</h3>
+                    <p class="field-help">Official document URLs still need to be configured.</p>
+                    <div class="application-document-placeholders"><button type="button" disabled>WBA Bylaws — Link Pending</button><button type="button" disabled>WBA Code of Ethics — Link Pending</button></div>
+                    <label class="checkbox-option"><input type="checkbox" id="bylawsAccepted"> <span>I have read and agree to the WBA Bylaws. <span aria-hidden="true">*</span></span></label>
+                    <label class="checkbox-option"><input type="checkbox" id="codeOfEthicsAccepted"> <span>I have read and agree to the WBA Code of Ethics. <span aria-hidden="true">*</span></span></label>
+                    <label class="checkbox-option"><input type="checkbox" id="communicationsConsent"> <span>I agree to accept electronic communication as the official means for the Working Beauceron Association, including email, phone, audio/video conferences, or other Board-approved methods. This will be used for meeting notifications, dues notices, minutes, newsletters, and announcements.</span></label>
+                </section>
+
+                <section class="application-form-section application-save-section" aria-labelledby="applicationActionsHeading">
+                    <h3 id="applicationActionsHeading">Save or Submit</h3>
+                    <p id="applicationFormMessage" role="alert"></p>
+                    <div id="applicationFormActions" class="application-form-actions">
+                        <button type="button" id="saveApplicationDraftButton">Save Draft</button>
+                        <button type="submit" id="submitApplicationButton" class="primary-save-button">Submit Application</button>
+                    </div>
+                </section>
+            </form>
+
+            <p><a href="login.html">Return to Login</a></p>
+        </section>
+    </main>
+
+    <script type="module" src="app.js"></script>
+</body>
+</html>

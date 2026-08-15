@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Review Application - WBA Member Portal</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+    <header class="app-header"><img src="images/wba-icon.png" alt="Working Beauceron Association" class="app-logo"><h1>WBA Administration</h1></header>
+    <nav class="member-nav" aria-label="Admin navigation"><a href="dashboard.html">Member Dashboard</a><a href="admin.html">Admin Dashboard</a><a href="admin-applications.html">Applications</a><button type="button" id="logoutButton">Log Out</button></nav>
+    <main class="app-content admin-page admin-application-detail-page">
+        <p id="adminApplicationAccessMessage" class="profile-muted" role="status">Verifying administrator access...</p>
+        <article id="adminApplicationDetail" hidden>
+            <div class="admin-page-heading"><p class="dashboard-eyebrow">Application review</p><h2 id="adminApplicationApplicantName">Membership Application</h2><p id="adminApplicationReviewFlag" class="admin-review-flag" hidden>Needs Sponsor</p></div>
+            <div id="adminApplicationSections" class="admin-application-sections"></div>
+
+            <section id="adminSponsorAssignment" class="admin-review-panel" hidden aria-labelledby="adminSponsorHeading">
+                <h3 id="adminSponsorHeading">Assign Sponsor</h3>
+                <p>An Active WBA member must be assigned before Board review and remain eligible through final approval.</p>
+                <div class="form-field"><label for="adminSponsorSearch">Search Active Members</label><input type="search" id="adminSponsorSearch" autocomplete="off" placeholder="Search by member name"></div>
+                <div id="adminSponsorResults" class="sponsor-search-results" aria-live="polite"></div>
+            </section>
+
+            <section id="adminReviewActions" class="admin-review-panel" hidden aria-labelledby="adminDecisionHeading">
+                <h3 id="adminDecisionHeading">Review Decision</h3>
+                <p id="adminDecisionHelp"></p>
+                <button type="button" id="sendToBoardReviewButton" class="primary-save-button">Send to Board Review</button>
+                <div id="boardDecisionControls" hidden>
+                    <div class="form-field"><label for="adminDeclineReason">Decline Reason (Admin-only)</label><textarea id="adminDeclineReason" rows="4"></textarea></div>
+                    <div class="application-form-actions"><button type="button" id="recordBoardApprovalButton" class="primary-save-button">Record Board Approval</button><button type="button" id="recordBoardDeclineButton">Record Board Decline</button></div>
+                </div>
+            </section>
+            <p id="adminApplicationMessage" role="alert"></p>
+            <p><a href="admin-applications.html">Back to Applications</a> · <a href="admin.html">Admin Dashboard</a></p>
+        </article>
+    </main>
+    <script type="module" src="app.js"></script>
+</body>
+</html>

@@ -30,17 +30,21 @@
             <div class="admin-page-heading">
                 <p class="dashboard-eyebrow">Secure administration</p>
                 <h2>Admin Dashboard</h2>
+                <p id="superAdminIndicator" class="super-admin-indicator" hidden>Super Admin</p>
                 <p>Manage WBA operations from this secure administrative area.</p>
             </div>
 
             <div class="dashboard-grid">
                 <a href="admin-members.html" class="dashboard-card dashboard-card-admin">
                     <h3>Membership Administration</h3>
-                    <p>Review member accounts and current membership information.</p>
+                    <p>Manage member records, membership status, and dues.</p>
+                    <span id="adminDuesAttentionCount" class="dashboard-card-status">
+                        Checking dues attention...
+                    </span>
                     <span>View Membership</span>
                 </a>
 
-                <section class="dashboard-card dashboard-card-placeholder"><h3>Applications</h3><p>Membership application review will be added later.</p><span>Coming Soon</span></section>
+                <a href="admin-applications.html" class="dashboard-card dashboard-card-admin"><h3>Applications</h3><p>Review submitted membership applications.</p><span id="adminPendingApplicationCount">View Applications</span></a>
                 <section class="dashboard-card dashboard-card-placeholder"><h3>Dog Database</h3><p>Dog record administration will be added later.</p><span>Coming Soon</span></section>
                 <section class="dashboard-card dashboard-card-placeholder"><h3>Communications</h3><p>Administrative communications will be added later.</p><span>Coming Soon</span></section>
                 <section class="dashboard-card dashboard-card-placeholder"><h3>Events</h3><p>Event administration will be added later.</p><span>Coming Soon</span></section>

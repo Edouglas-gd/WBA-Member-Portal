@@ -53,6 +53,18 @@
             id="memberProfile"
         >
 
+            <div
+                class="profile-preview-banner"
+                id="profilePreviewBanner"
+                role="status"
+                style="display: none;"
+            >
+                <p>You are viewing your profile as other members see it.</p>
+                <a href="profile.html" class="profile-action-button" id="exitProfilePreviewButton">
+                    Exit Preview
+                </a>
+            </div>
+
             <!-- Profile Header -->
 
             <div class="profile-header">
@@ -103,6 +115,15 @@
                     style="display: none;"
                 >
                     Edit Profile
+                </a>
+
+                <a
+                    href="profile.html?preview=member"
+                    class="profile-action-button"
+                    id="viewAsOthersButton"
+                    style="display: none;"
+                >
+                    View As Others
                 </a>
 
             </div>

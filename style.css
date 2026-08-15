@@ -145,7 +145,36 @@ body {
 }
 
 .profile-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
     margin-bottom: 24px;
+}
+
+.profile-preview-banner {
+    box-sizing: border-box;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    margin-bottom: 22px;
+    padding: 16px 18px;
+    border: 2px solid rgba(90, 45, 120, 0.55);
+    border-radius: 10px;
+    background-color: rgba(90, 45, 120, 0.08);
+}
+
+.profile-preview-banner p {
+    margin: 0;
+    font-weight: bold;
+}
+
+@media (max-width: 520px) {
+
+    .profile-preview-banner {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
 }
 
 .profile-action-button {
@@ -257,9 +286,368 @@ body {
    Administration
 ---------------------------------- */
 
+.membership-application-page {
+    max-width: 850px;
+}
+
+.membership-status-page {
+    max-width: 760px;
+}
+
+.membership-progress-card {
+    box-sizing: border-box;
+    margin-bottom: 24px;
+    padding: 24px;
+    border-radius: 12px;
+    background-color: white;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.membership-progress-card h3 {
+    margin-top: 0;
+}
+
+.membership-progress-details {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 14px;
+}
+
+.membership-progress-details div {
+    min-width: 0;
+    padding: 14px;
+    border-radius: 8px;
+    background-color: rgba(0, 0, 0, 0.05);
+    overflow-wrap: anywhere;
+}
+
+.membership-progress-details dt {
+    font-weight: bold;
+}
+
+.membership-progress-details dd {
+    margin: 4px 0 0;
+}
+
+.application-heading-card,
+.application-verification-card,
+.application-form-placeholder,
+.application-form-section {
+    box-sizing: border-box;
+    margin-bottom: 24px;
+    padding: 24px;
+    border-radius: 12px;
+    background-color: white;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+
+.application-status-summary {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.application-status-summary div {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    padding: 14px;
+    border-radius: 8px;
+    background-color: rgba(0, 0, 0, 0.05);
+}
+
+.application-status-summary span {
+    font-size: 0.88rem;
+}
+
+.application-heading-card h2,
+.application-heading-card p,
+.application-verification-card h3 {
+    margin-top: 4px;
+}
+
+.application-verification-card {
+    border: 2px solid rgba(90, 45, 120, 0.38);
+}
+
+.application-verification-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 18px;
+}
+
+.application-verification-actions button {
+    min-height: 44px;
+    padding: 10px 16px;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    background-color: white;
+    color: inherit;
+    font: inherit;
+    cursor: pointer;
+}
+
+.application-form-section h3 {
+    margin-top: 0;
+}
+
+.membership-type-fieldset {
+    min-width: 0;
+    padding: 0;
+    border: 0;
+}
+
+.membership-type-fieldset legend {
+    margin-bottom: 12px;
+    font-weight: bold;
+}
+
+.membership-type-cards {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.membership-type-card {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    min-width: 0;
+    padding: 18px;
+    border: 1px solid rgba(0, 0, 0, 0.22);
+    border-radius: 10px;
+    cursor: pointer;
+}
+
+.membership-type-card:has(input:checked) {
+    border-color: rgba(90, 45, 120, 0.8);
+    background-color: rgba(90, 45, 120, 0.08);
+}
+
+.membership-type-card input {
+    margin-top: 3px;
+    flex-shrink: 0;
+}
+
+.membership-type-card > span,
+.membership-type-card strong,
+.membership-type-card span {
+    display: block;
+    min-width: 0;
+}
+
+.membership-type-card strong,
+.membership-type-price {
+    margin-bottom: 7px;
+}
+
+.membership-type-price {
+    font-weight: bold;
+}
+
+.application-document-placeholders,
+.application-form-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin: 16px 0;
+}
+
+.application-document-placeholders button,
+.application-form-actions button,
+.selected-sponsor button,
+.sponsor-search-results button {
+    min-height: 44px;
+    padding: 10px 16px;
+    border: 1px solid currentColor;
+    border-radius: 6px;
+    background-color: white;
+    color: inherit;
+    font: inherit;
+}
+
+.application-form-actions button,
+.selected-sponsor button,
+.sponsor-search-results button {
+    cursor: pointer;
+}
+
+.sponsor-search-results {
+    display: grid;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.sponsor-search-results button {
+    text-align: left;
+}
+
+.selected-sponsor {
+    margin-top: 16px;
+    padding: 14px;
+    border: 1px solid rgba(0, 0, 0, 0.18);
+    border-radius: 8px;
+}
+
+.selected-sponsor span,
+.selected-sponsor strong {
+    display: block;
+    margin-bottom: 6px;
+}
+
+.sponsor-request-option {
+    margin-top: 20px;
+}
+
+.application-or-divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 18px 0;
+    font-weight: bold;
+}
+
+.application-or-divider::before,
+.application-or-divider::after {
+    height: 1px;
+    background-color: rgba(0, 0, 0, 0.2);
+    content: "";
+    flex: 1;
+}
+
+.application-fieldset,
+.application-reference {
+    min-width: 0;
+    margin: 18px 0;
+    padding: 18px;
+    border: 1px solid rgba(0, 0, 0, 0.2);
+    border-radius: 8px;
+}
+
+.application-fieldset label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin: 14px 20px 0 0;
+}
+
+.application-save-section {
+    border: 2px solid rgba(90, 45, 120, 0.38);
+}
+
+@media (max-width: 600px) {
+
+    .application-status-summary {
+        grid-template-columns: 1fr;
+    }
+
+    .membership-type-cards {
+        grid-template-columns: 1fr;
+    }
+
+    .application-form-section {
+        padding: 20px 16px;
+    }
+
+    .application-document-placeholders,
+    .application-form-actions {
+        align-items: stretch;
+        flex-direction: column;
+    }
+
+}
+
 .admin-page,
-.admin-members-page {
+.admin-members-page,
+.admin-member-page {
     max-width: 1200px;
+}
+
+.admin-manage-link {
+    font-weight: bold;
+    white-space: nowrap;
+}
+
+.admin-detail-card {
+    box-sizing: border-box;
+    margin-top: 24px;
+    padding: 24px;
+    border-radius: 12px;
+    background: white;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+    overflow-wrap: anywhere;
+}
+
+.admin-detail-card h3 {
+    margin-top: 0;
+}
+
+.super-admin-indicator {
+    display: inline-block;
+    padding: 5px 10px;
+    border: 1px solid rgba(90, 45, 120, 0.55);
+    border-radius: 999px;
+    font-size: 0.85rem;
+    font-weight: bold;
+}
+
+.admin-detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 18px;
+}
+
+.admin-detail-grid div {
+    min-width: 0;
+}
+
+.admin-detail-grid dt {
+    font-weight: bold;
+}
+
+.admin-detail-grid dd {
+    margin: 4px 0 0;
+}
+
+.admin-uid {
+    color: rgba(0, 0, 0, 0.62);
+    font-size: 0.88rem;
+}
+
+.member-history-list {
+    display: grid;
+    gap: 16px;
+    margin: 20px 0 0;
+    padding: 0;
+    list-style: none;
+}
+
+.member-history-list li {
+    padding: 16px 18px;
+    border-left: 4px solid rgba(90, 45, 120, 0.65);
+    border-radius: 0 8px 8px 0;
+    background: rgba(90, 45, 120, 0.06);
+}
+
+.member-history-list time,
+.member-history-list strong {
+    display: block;
+}
+
+.member-history-list time,
+.member-history-actor {
+    color: rgba(0, 0, 0, 0.65);
+    font-size: 0.88rem;
+}
+
+.member-history-list strong {
+    margin-top: 4px;
+}
+
+.member-history-list p {
+    margin: 8px 0 0;
 }
 
 .admin-page-heading {
@@ -306,6 +694,35 @@ body {
     outline-offset: 2px;
 }
 
+.admin-members-filter {
+    max-width: 320px;
+    margin-bottom: 16px;
+}
+
+.admin-sort-button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+    font-weight: bold;
+    text-align: left;
+    cursor: pointer;
+}
+
+.admin-sort-button span {
+    min-width: 1em;
+}
+
+.admin-sort-button:focus-visible {
+    outline: 3px solid rgba(0, 90, 180, 0.45);
+    outline-offset: 3px;
+}
+
 .admin-table-container {
     margin-top: 18px;
 }
@@ -329,6 +746,10 @@ body {
 }
 
 @media (max-width: 760px) {
+
+    .admin-detail-grid {
+        grid-template-columns: 1fr;
+    }
 
     .admin-members-table,
     .admin-members-table tbody,
@@ -453,6 +874,22 @@ a.dashboard-card:focus-visible {
 }
 
 .dashboard-card span {
+    font-weight: bold;
+}
+
+.dashboard-card .dashboard-card-status {
+    align-self: flex-start;
+    margin-bottom: 14px;
+    padding: 5px 9px;
+    border-radius: 999px;
+    background: rgba(0, 0, 0, 0.06);
+    font-size: 0.88rem;
+    font-weight: normal;
+}
+
+.dashboard-card .dashboard-card-status.has-attention {
+    background: #fff0cf;
+    color: #744400;
     font-weight: bold;
 }
 
@@ -628,6 +1065,89 @@ a.dashboard-card:focus-visible {
     min-height: 36px;
     line-height: 1.35;
     cursor: pointer;
+}
+
+/* ----------------------------------
+   Admin Application Review
+---------------------------------- */
+
+.admin-application-filter {
+    max-width: 320px;
+}
+
+.admin-application-list,
+.admin-application-sections {
+    display: grid;
+    gap: 18px;
+    margin: 24px 0;
+}
+
+.admin-application-list {
+    grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+}
+
+.admin-application-card,
+.admin-application-section,
+.admin-review-panel {
+    padding: 22px;
+    border: 1px solid rgba(0, 0, 0, 0.16);
+    border-radius: 10px;
+    background: white;
+}
+
+.admin-application-card.needs-sponsor,
+.admin-review-flag {
+    border-color: #a65b00;
+    background: #fff4df;
+}
+
+.admin-review-flag {
+    display: inline-block;
+    padding: 7px 12px;
+    border: 1px solid #a65b00;
+    border-radius: 999px;
+    font-weight: bold;
+}
+
+.admin-application-card h3,
+.admin-application-section h3,
+.admin-review-panel h3 {
+    margin-top: 0;
+}
+
+.admin-application-card dl,
+.admin-application-section dl {
+    display: grid;
+    grid-template-columns: minmax(110px, 0.7fr) minmax(0, 1.3fr);
+    gap: 8px 16px;
+}
+
+.admin-application-card dt,
+.admin-application-section dt {
+    font-weight: bold;
+}
+
+.admin-application-card dd,
+.admin-application-section dd {
+    margin: 0;
+    overflow-wrap: anywhere;
+    white-space: pre-wrap;
+}
+
+.admin-review-panel {
+    margin: 24px 0;
+}
+
+@media (max-width: 600px) {
+    .admin-application-card dl,
+    .admin-application-section dl {
+        grid-template-columns: 1fr;
+    }
+
+    .admin-application-card dd,
+    .admin-application-section dd {
+        margin-bottom: 8px;
+    }
 }
 
 .checkbox-option input {

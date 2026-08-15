@@ -29,9 +29,9 @@
 
         <section id="adminMemberDirectory" hidden>
             <div class="admin-page-heading">
-                <p class="dashboard-eyebrow">Read-only administration</p>
+                <p class="dashboard-eyebrow">Secure administration</p>
                 <h2>Membership Accounts</h2>
-                <p>Review private account and membership information. Editing is not enabled yet.</p>
+                <p>Review accounts and open an individual record to manage WBA membership information.</p>
             </div>
 
             <div class="admin-search-field">
@@ -44,21 +44,29 @@
                 >
             </div>
 
+            <div class="form-field admin-members-filter">
+                <label for="adminMemberFilter">Show Accounts</label>
+                <select id="adminMemberFilter">
+                    <option value="all">All Members</option>
+                    <option value="dues">Dues Attention</option>
+                </select>
+            </div>
+
             <p id="adminMemberMessage" class="profile-muted" role="status">
                 Loading membership accounts...
             </p>
-
             <div class="admin-table-container">
                 <table class="admin-members-table">
                     <thead>
                         <tr>
-                            <th scope="col">Member</th>
-                            <th scope="col">Email</th>
-                            <th scope="col">Status</th>
-                            <th scope="col">Type</th>
-                            <th scope="col">Member ID</th>
-                            <th scope="col">Member Since</th>
-                            <th scope="col">Current Through</th>
+                            <th scope="col" aria-sort="ascending"><button type="button" class="admin-sort-button" data-admin-sort="member">Member <span aria-hidden="true">▲</span></button></th>
+                            <th scope="col" aria-sort="none"><button type="button" class="admin-sort-button" data-admin-sort="memberId">Member ID <span aria-hidden="true"></span></button></th>
+                            <th scope="col" aria-sort="none"><button type="button" class="admin-sort-button" data-admin-sort="email">Email <span aria-hidden="true"></span></button></th>
+                            <th scope="col" aria-sort="none"><button type="button" class="admin-sort-button" data-admin-sort="status">Status <span aria-hidden="true"></span></button></th>
+                            <th scope="col" aria-sort="none"><button type="button" class="admin-sort-button" data-admin-sort="type">Type <span aria-hidden="true"></span></button></th>
+                            <th scope="col" aria-sort="none"><button type="button" class="admin-sort-button" data-admin-sort="memberSince">Member Since <span aria-hidden="true"></span></button></th>
+                            <th scope="col" aria-sort="none"><button type="button" class="admin-sort-button" data-admin-sort="currentThrough">Current Through <span aria-hidden="true"></span></button></th>
+                            <th scope="col">Action</th>
                         </tr>
                     </thead>
                     <tbody id="adminMemberTableBody"></tbody>

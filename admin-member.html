@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Manage Membership - WBA Member Portal</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+    <header class="app-header">
+        <img src="images/wba-icon.png" alt="Working Beauceron Association" class="app-logo">
+        <h1>Manage Membership</h1>
+    </header>
+    <nav class="member-nav" aria-label="Admin navigation">
+        <a href="dashboard.html">Member Dashboard</a>
+        <a href="admin.html">Admin Dashboard</a>
+        <a href="admin-members.html">Membership</a>
+        <button type="button" id="logoutButton">Log Out</button>
+    </nav>
+    <main class="app-content admin-member-page">
+        <p id="adminMemberDetailAccessMessage" class="profile-muted" role="status">Verifying administrator access...</p>
+        <section id="adminMemberDetail" hidden>
+            <div class="admin-page-heading">
+                <p class="dashboard-eyebrow">Membership account</p>
+                <h2 id="adminMemberName">Member</h2>
+                <p><a href="admin-members.html">← Back to Membership Accounts</a></p>
+            </div>
+
+            <section class="admin-detail-card" aria-labelledby="accountHeading">
+                <h3 id="accountHeading">Identity / Account</h3>
+                <dl class="admin-detail-grid">
+                    <div><dt>Preferred Name</dt><dd id="adminMemberPreferredName">—</dd></div>
+                    <div><dt>Email</dt><dd id="adminMemberEmail">—</dd></div>
+                    <div><dt>Account Created</dt><dd id="adminMemberCreatedAt">—</dd></div>
+                    <div><dt>Profile</dt><dd id="adminMemberProfileCompletion">—</dd></div>
+                    <div><dt>Phone</dt><dd id="adminMemberPhone">—</dd></div>
+                    <div><dt>Location</dt><dd id="adminMemberLocation">—</dd></div>
+                    <div class="admin-uid"><dt>Firebase UID</dt><dd id="adminMemberUid">—</dd></div>
+                </dl>
+            </section>
+
+            <section class="admin-detail-card" aria-labelledby="membershipHeading">
+                <h3 id="membershipHeading">Membership Administration</h3>
+                <form id="adminMembershipForm" class="profile-form">
+                    <div class="form-field"><label for="adminMemberId">Member ID</label><input type="text" id="adminMemberId"></div>
+                    <div class="form-row form-row-two-columns">
+                        <div class="form-field"><label for="adminMembershipStatus">Membership Status</label><select id="adminMembershipStatus"></select></div>
+                        <div class="form-field"><label for="adminMembershipType">Membership Type</label><select id="adminMembershipType"></select></div>
+                    </div>
+                    <div class="form-row form-row-two-columns">
+                        <div class="form-field"><label for="adminMembershipStartDate">Membership Start Date</label><input type="date" id="adminMembershipStartDate"></div>
+                        <div class="form-field"><label for="adminMembershipCurrentThrough">Membership Current Through</label><input type="date" id="adminMembershipCurrentThrough"></div>
+                    </div>
+                    <div class="form-save-section"><button type="submit" class="primary-save-button">Save Membership Changes</button></div>
+                    <p id="adminMembershipMessage" role="status"></p>
+                </form>
+            </section>
+
+            <section class="admin-detail-card" aria-labelledby="accountActionsHeading">
+                <h3 id="accountActionsHeading">Account Actions</h3>
+                <p>Send the member Firebase's standard password-reset email. The member will choose their own new password.</p>
+                <button type="button" id="adminSendPasswordResetButton">Send Password Reset Email</button>
+                <p id="adminPasswordResetMessage" role="status"></p>
+            </section>
+
+        </section>
+    </main>
+    <script type="module" src="app.js"></script>
+</body>
+</html>
