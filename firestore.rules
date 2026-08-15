@@ -211,17 +211,24 @@ service cloud.firestore {
         );
     }
 
+    // Trusted Admin lifecycle check. Applicant submission validates reference shape only.
+    function validActiveSponsor(sponsorUid, applicantUid) {
+      return sponsorUid is string
+        && sponsorUid.size() > 0
+        && sponsorUid != applicantUid
+        && get(/databases/$(database)/documents/users/$(sponsorUid)).data.membershipStatus == 'Active';
+    }
+
+    // Applicant submission records a claimed sponsor UID or a normalized sponsor request.
+    // Submission grants no membership; Admin lifecycle writes verify Active, non-self sponsorship.
     function validSubmittedSponsor(uid) {
-      return request.resource.data.sponsorRequested == true
-        ? !('sponsorUserId' in request.resource.data)
-          && !('sponsorDisplayName' in request.resource.data)
-        : request.resource.data.sponsorUserId is string
-          && request.resource.data.sponsorUserId.size() > 0
-          && request.resource.data.sponsorUserId != uid
-          && request.resource.data.sponsorDisplayName is string
-          && request.resource.data.sponsorDisplayName.size() > 0
-          && exists(/databases/$(database)/documents/users/$(request.resource.data.sponsorUserId))
-          && get(/databases/$(database)/documents/users/$(request.resource.data.sponsorUserId)).data.get('membershipStatus', '') == 'Active';
+      // Submission records an applicant-provided reference but grants no membership.
+      // Canonical Active status is revalidated during trusted Admin lifecycle writes.
+      return (request.resource.data.sponsorRequested == true
+          && !('sponsorUserId' in request.resource.data)
+          && !('sponsorDisplayName' in request.resource.data))
+        || (request.resource.data.sponsorRequested == false
+          && request.resource.data.sponsorUserId is string);
     }
 
     function validApplicationSubmission(uid) {
@@ -298,8 +305,7 @@ service cloud.firestore {
         && request.resource.data.sponsorDisplayName.size() > 0
         && request.resource.data.sponsorAssignedAt is string
         && request.resource.data.sponsorAssignedBy == request.auth.uid
-        && exists(/databases/$(database)/documents/users/$(request.resource.data.sponsorUserId))
-        && get(/databases/$(database)/documents/users/$(request.resource.data.sponsorUserId)).data.get('membershipStatus', '') == 'Active';
+        && validActiveSponsor(request.resource.data.sponsorUserId, uid);
     }
 
     function validAdminBoardReadiness(uid) {
@@ -333,9 +339,7 @@ service cloud.firestore {
         && resource.data.sponsorRequested == false
         && resource.data.sponsorUserId is string
         && resource.data.sponsorUserId.size() > 0
-        && resource.data.sponsorUserId != uid
-        && exists(/databases/$(database)/documents/users/$(resource.data.sponsorUserId))
-        && get(/databases/$(database)/documents/users/$(resource.data.sponsorUserId)).data.get('membershipStatus', '') == 'Active';
+        && validActiveSponsor(resource.data.sponsorUserId, uid);
     }
 
     function validAdminSendToBoard(uid) {

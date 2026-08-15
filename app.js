@@ -1312,8 +1312,9 @@ if (membershipApplicationPage) {
                     );
                     if (sponsorSnapshot.exists()) {
                         sponsorProfiles.push({
+                            ...sponsorSnapshot.data(),
                             uid: sponsorSnapshot.id,
-                            ...sponsorSnapshot.data()
+                            documentId: sponsorSnapshot.id
                         });
                     }
                 } catch (error) {
@@ -1535,8 +1536,9 @@ if (membershipApplicationPage) {
                     : {};
 
                 sponsorProfiles = memberProfilesSnapshot.docs.map((profileSnapshot) => ({
+                    ...profileSnapshot.data(),
                     uid: profileSnapshot.id,
-                    ...profileSnapshot.data()
+                    documentId: profileSnapshot.id
                 }));
 
                 populateApplicationForm(
@@ -2556,6 +2558,50 @@ const getApplicationApplicantName = (applicationData) =>
     `${applicationData?.preferredName || applicationData?.firstName || ""} ${applicationData?.lastName || ""}`.trim() ||
     "Unnamed Applicant";
 
+const getSponsorReviewState = (applicationData, memberAccountsByUid) => {
+    if (applicationData?.sponsorRequested === true) {
+        return {
+            code: "request",
+            label: "Needs Sponsor",
+            reason: "The applicant requested help finding a sponsor."
+        };
+    }
+
+    const sponsorUid = applicationData?.sponsorUserId;
+    if (typeof sponsorUid !== "string") {
+        return {
+            code: "malformed",
+            label: "Sponsor Needs Review",
+            reason: "The selected sponsor reference is missing or malformed."
+        };
+    }
+    if (sponsorUid === applicationData?.applicantUid) {
+        return {
+            code: "self",
+            label: "Sponsor Needs Review",
+            reason: "The applicant appears to reference their own account as sponsor."
+        };
+    }
+
+    const sponsor = memberAccountsByUid.get(sponsorUid);
+    if (!sponsor) {
+        return {
+            code: "missing",
+            label: "Sponsor Needs Review",
+            reason: "The selected sponsor could not be verified as a current WBA member."
+        };
+    }
+    if (sponsor.membershipStatus !== "Active") {
+        return {
+            code: "inactive",
+            label: "Sponsor Needs Review",
+            reason: "The selected sponsor is no longer an Active WBA member."
+        };
+    }
+
+    return { code: "valid", label: "Valid Sponsor", reason: "" };
+};
+
 const adminApplications = document.getElementById("adminApplications");
 
 if (adminApplications) {
@@ -2564,6 +2610,7 @@ if (adminApplications) {
     const message = document.getElementById("adminApplicationsMessage");
     const filter = document.getElementById("applicationStatusFilter");
     let loadedApplications = [];
+    let memberAccountsByUid = new Map();
 
     const renderApplications = () => {
         const selectedStatus = filter.value;
@@ -2579,6 +2626,10 @@ if (adminApplications) {
 
         list.replaceChildren();
         filtered.forEach((applicationData) => {
+            const sponsorReview = getSponsorReviewState(
+                applicationData,
+                memberAccountsByUid
+            );
             const card = document.createElement("article");
             card.className = "admin-application-card";
             const heading = document.createElement("h3");
@@ -2593,6 +2644,7 @@ if (adminApplications) {
                     : applicationData.sponsorDisplayName
                         ? `Sponsored by ${applicationData.sponsorDisplayName}`
                         : "Sponsor not recorded"],
+                ["Sponsorship Review", sponsorReview.label],
                 ["Status", applicationData.applicationStatus]
             ];
             rows.forEach(([term, value]) => {
@@ -2602,7 +2654,7 @@ if (adminApplications) {
                 dd.textContent = String(value);
                 details.append(dt, dd);
             });
-            if (applicationData.sponsorRequested === true) card.classList.add("needs-sponsor");
+            if (sponsorReview.code !== "valid") card.classList.add("needs-sponsor");
             const link = document.createElement("a");
             link.href = `admin-application.html?id=${encodeURIComponent(applicationData.applicantUid)}`;
             link.textContent = "View Application";
@@ -2626,7 +2678,14 @@ if (adminApplications) {
                 window.location.replace("dashboard.html");
                 return;
             }
-            loadedApplications = (await loadAdminApplications())
+            const [applications, memberAccounts] = await Promise.all([
+                loadAdminApplications(),
+                loadAdminMemberAccounts()
+            ]);
+            memberAccountsByUid = new Map(
+                memberAccounts.map((memberData) => [memberData.uid, memberData])
+            );
+            loadedApplications = applications
                 .filter((applicationData) =>
                     ["Submitted", "Awaiting Board Decision", "Approved", "Declined"].includes(applicationData.applicationStatus)
                 );
@@ -2658,6 +2717,7 @@ if (adminApplicationDetail) {
     let applicationData = null;
     let applicantData = null;
     let activeSponsors = [];
+    let memberAccountsByUid = new Map();
     let adminUser = null;
 
     const yesNo = (value) => value === true ? "Yes" : value === false ? "No" : "—";
@@ -2715,15 +2775,15 @@ if (adminApplicationDetail) {
 
         const isSubmitted = applicationData.applicationStatus === "Submitted";
         const isAwaitingBoard = applicationData.applicationStatus === "Awaiting Board Decision";
-        const selectedSponsorIsActive = activeSponsors.some(
-            (sponsor) => sponsor.uid === applicationData.sponsorUserId
+        const sponsorReview = getSponsorReviewState(
+            applicationData,
+            memberAccountsByUid
         );
-        const sponsorNeedsResolution =
-            applicationData.sponsorRequested === true ||
-            !applicationData.sponsorUserId ||
-            !selectedSponsorIsActive;
+        const sponsorNeedsResolution = sponsorReview.code !== "valid";
         reviewFlag.hidden = !sponsorNeedsResolution;
-        reviewFlag.textContent = sponsorNeedsResolution ? "Needs Sponsor" : "";
+        reviewFlag.textContent = sponsorNeedsResolution
+            ? `${sponsorReview.label}: ${sponsorReview.reason}`
+            : "";
         sponsorPanel.hidden = !(isSubmitted || isAwaitingBoard) || !sponsorNeedsResolution;
         actions.hidden = !(isSubmitted || isAwaitingBoard);
         sendToBoardReviewButton.hidden = !isSubmitted;
@@ -2737,9 +2797,15 @@ if (adminApplicationDetail) {
 
     const validateApplicationReadiness = async () => {
         if (applicationData.sponsorRequested || !applicationData.sponsorUserId) return "Assign an Active WBA sponsor before continuing this application.";
+        if (applicationData.sponsorUserId === applicantUid) {
+            return "The applicant appears to reference their own account as sponsor. Please assign another sponsor before sending this application to the Board.";
+        }
         const sponsorSnapshot = await getDoc(doc(db, "users", applicationData.sponsorUserId));
-        if (!sponsorSnapshot.exists() || sponsorSnapshot.data().membershipStatus !== "Active") {
-            return "The selected sponsor is no longer an Active WBA member. Please assign another sponsor before approving this application.";
+        if (!sponsorSnapshot.exists()) {
+            return "The selected sponsor could not be verified as a current WBA member. Please assign another sponsor before sending this application to the Board.";
+        }
+        if (sponsorSnapshot.data().membershipStatus !== "Active") {
+            return "The selected sponsor is no longer an Active WBA member. Please assign another sponsor before sending this application to the Board.";
         }
         const membershipYear = getApplicationMembershipYear(applicationData);
         if (applicationData.membershipType === "Junior") {
@@ -2981,6 +3047,9 @@ if (adminApplicationDetail) {
             if (!applicantSnapshot.exists()) { accessMessage.textContent = "The applicant account could not be found."; return; }
             applicationData = { applicantUid, ...applicationSnapshot.data() };
             applicantData = applicantSnapshot.data();
+            memberAccountsByUid = new Map(
+                adminMemberAccounts.map((memberData) => [memberData.uid, memberData])
+            );
             activeSponsors = adminMemberAccounts.filter(
                 (userData) => userData.membershipStatus === "Active"
             );
