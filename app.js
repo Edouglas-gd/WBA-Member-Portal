@@ -13,6 +13,13 @@ import {
 } from "./location-data.js";
 
 import {
+    canDownloadMembershipApplicationPdf,
+    generateMembershipApplicationPdf
+} from "./application-pdf.js";
+
+import { generateMemberHistoryPdf } from "./member-history-pdf.js";
+
+import {
     ref,
     uploadBytes,
     getDownloadURL,
@@ -32,6 +39,7 @@ import {
 import {
     doc,
     setDoc,
+    updateDoc,
     getDoc,
     collection,
     getDocs,
@@ -160,6 +168,202 @@ const DOG_SPORT_LABELS =
             ]
         )
     );
+
+const APPLICATION_QUESTION_TYPES = new Set([
+    "shortText",
+    "longText",
+    "yesNo",
+    "singleSelect",
+    "multiSelect"
+]);
+
+// Question IDs are permanent once used by a submitted application. Future
+// configuration should deactivate questions instead of deleting or renaming IDs.
+const FALLBACK_MEMBERSHIP_APPLICATION_QUESTIONS = [
+    {
+        id: "animal-organizations",
+        label: "Please list any other animal organizations you have been, or are currently, a member of.",
+        type: "longText",
+        required: false,
+        active: true,
+        order: 10
+    },
+    {
+        id: "discipline-history",
+        label: "Have you previously been disciplined by a dog club, breed organization, or governing body?",
+        type: "yesNo",
+        required: true,
+        active: true,
+        order: 20,
+        requiresExplanationWhen: true,
+        explanationLabel: "Please explain."
+    },
+    {
+        id: "owns-beauceron",
+        label: "Do you currently own a Beauceron?",
+        type: "yesNo",
+        required: true,
+        active: true,
+        order: 30
+    },
+    {
+        id: "dog-sports",
+        label: "What dog sports, training, or activities do you currently participate in?",
+        type: "multiSelect",
+        optionSource: "DOG_SPORT_OPTIONS",
+        required: false,
+        active: true,
+        order: 40
+    }
+];
+
+const normalizeApplicationQuestions = (questions) => {
+    const source = Array.isArray(questions)
+        ? questions
+        : FALLBACK_MEMBERSHIP_APPLICATION_QUESTIONS;
+    const normalized = source.filter((question) =>
+        question &&
+        typeof question.id === "string" && question.id.trim() &&
+        typeof question.label === "string" && question.label.trim() &&
+        APPLICATION_QUESTION_TYPES.has(question.type) &&
+        typeof question.required === "boolean" &&
+        typeof question.active === "boolean" &&
+        typeof question.order === "number"
+    ).map((question) => ({
+        ...question,
+        id: question.id.trim(),
+        label: question.label.trim(),
+        options: Array.isArray(question.options)
+            ? question.options.filter((option) =>
+                option && typeof option.id === "string" &&
+                typeof option.label === "string"
+            )
+            : [],
+        requiresExplanationWhen: question.requiresExplanationWhen === true,
+        explanationLabel: typeof question.explanationLabel === "string" && question.explanationLabel.trim()
+            ? question.explanationLabel.trim()
+            : "Please explain."
+    }));
+    return normalized.length
+        ? normalized.sort((left, right) => left.order - right.order)
+        : FALLBACK_MEMBERSHIP_APPLICATION_QUESTIONS.map((question) => ({ ...question }));
+};
+
+const getApplicationQuestionOptions = (question) =>
+    question.optionSource === "DOG_SPORT_OPTIONS"
+        ? DOG_SPORT_OPTIONS
+        : question.options || [];
+
+const loadMembershipApplicationQuestions = async () => {
+    try {
+        const snapshot = await getDoc(
+            doc(db, "membershipApplicationConfig", "current")
+        );
+        return normalizeApplicationQuestions(
+            snapshot.exists() ? snapshot.data().questions : null
+        );
+    } catch (error) {
+        console.warn(
+            "Membership application question configuration could not be loaded; using fallback questions.",
+            error
+        );
+        return normalizeApplicationQuestions();
+    }
+};
+
+const hasValidApplicationQuestionResponseShape = (response) => {
+    if (!response || typeof response.questionId !== "string" ||
+        typeof response.questionLabel !== "string" ||
+        !APPLICATION_QUESTION_TYPES.has(response.questionType) ||
+        typeof response.required !== "boolean") {
+        return false;
+    }
+    if (["shortText", "longText", "singleSelect"].includes(response.questionType)) {
+        return typeof response.answer === "string";
+    }
+    if (response.questionType === "yesNo") {
+        return (response.answer === null || typeof response.answer === "boolean") &&
+            (response.explanation === undefined || typeof response.explanation === "string");
+    }
+    return Array.isArray(response.answer) && response.answer.every(
+        (answer) => typeof answer === "string"
+    );
+};
+
+const getApplicationQuestionResponses = (applicationData) => {
+    if (Array.isArray(applicationData?.customQuestionResponses)) {
+        const responses = applicationData.customQuestionResponses.filter(
+            hasValidApplicationQuestionResponseShape
+        );
+        if (!responses.some((response) => response.questionId === "discipline-history") &&
+            typeof applicationData.disciplineHistory === "boolean") {
+            const disciplineQuestion = FALLBACK_MEMBERSHIP_APPLICATION_QUESTIONS.find(
+                (question) => question.id === "discipline-history"
+            );
+            responses.push({
+                questionId: disciplineQuestion.id,
+                questionLabel: disciplineQuestion.label,
+                questionType: disciplineQuestion.type,
+                required: disciplineQuestion.required,
+                answer: applicationData.disciplineHistory,
+                requiresExplanationWhen: true,
+                explanationLabel: disciplineQuestion.explanationLabel,
+                explanation: applicationData.disciplineExplanation || ""
+            });
+        }
+        return responses;
+    }
+    if (!applicationData) return [];
+    return FALLBACK_MEMBERSHIP_APPLICATION_QUESTIONS.map((question) => {
+        const legacyAnswer = question.id === "animal-organizations"
+            ? applicationData.animalOrganizations ?? ""
+            : question.id === "discipline-history"
+                ? applicationData.disciplineHistory ?? null
+                : question.id === "owns-beauceron"
+                    ? applicationData.ownsBeauceron ?? null
+                    : Array.isArray(applicationData.dogSports) ? applicationData.dogSports : [];
+        const response = {
+            questionId: question.id,
+            questionLabel: question.label,
+            questionType: question.type,
+            required: question.required,
+            answer: legacyAnswer
+        };
+        if (question.id === "discipline-history") {
+            response.requiresExplanationWhen = true;
+            response.explanationLabel = question.explanationLabel;
+            response.explanation = applicationData.disciplineExplanation || "";
+        }
+        return response;
+    });
+};
+
+const formatApplicationQuestionAnswer = (response) => {
+    if (response.questionType === "yesNo") {
+        const answer = response.answer === true ? "Yes" : response.answer === false ? "No" : "—";
+        return response.answer === true && response.explanation
+            ? `${answer}\n${response.explanationLabel || "Explanation"}: ${response.explanation}`
+            : answer;
+    }
+    if (Array.isArray(response.answer)) {
+        const values = response.questionId === "dog-sports"
+            ? response.answer.map((id) => DOG_SPORT_LABELS.get(id) || id)
+            : response.answer;
+        return values.length ? values.join(", ") : "None selected";
+    }
+    return typeof response.answer === "string" && response.answer.trim()
+        ? response.answer
+        : "—";
+};
+
+const hasValidRequiredQuestionAnswer = (response) => {
+    if (!response.required) return true;
+    if (response.questionType === "yesNo") return typeof response.answer === "boolean";
+    if (response.questionType === "multiSelect") {
+        return Array.isArray(response.answer) && response.answer.length > 0;
+    }
+    return typeof response.answer === "string" && response.answer.trim().length > 0;
+};
 
 const MEMBERSHIP_STATUSES = [
     "Active",
@@ -361,12 +565,13 @@ const STATUS_PAGE_MEMBERSHIP_STATUSES =
         "Awaiting Board Decision",
         "Approved",
         "Declined",
-        "Withdrawn"
+        "Withdrawn",
+        "Needs Revision"
     ]);
 
 
 const getPostLoginRoute =
-    async (authenticatedUser) => {
+    async (authenticatedUser, { allowRevisionEditing = false } = {}) => {
 
         if (!authenticatedUser?.emailVerified) {
             logRoutingDecision({
@@ -447,6 +652,17 @@ const getPostLoginRoute =
 
         if (CURRENT_MEMBER_STATUSES.has(membershipStatus)) {
             return returnRoute("dashboard.html", "current-member");
+        }
+
+        if (applicationStatus === "Needs Revision") {
+            return returnRoute(
+                allowRevisionEditing
+                    ? "membership-application.html"
+                    : "membership-status.html",
+                allowRevisionEditing
+                    ? "application-revision-editing"
+                    : "application-needs-revision"
+            );
         }
 
         if (
@@ -695,6 +911,7 @@ if (membershipApplicationPage) {
     let unmappedApplicationCountry = "";
     let unmappedApplicationSubdivision = "";
     let membershipConfig = normalizeMembershipConfig();
+    let applicationQuestions = normalizeApplicationQuestions();
     const applicableMembershipYear = new Date().getFullYear();
     const getDraftMembershipYear = () =>
         currentApplication?.membershipYear || applicableMembershipYear;
@@ -719,22 +936,88 @@ if (membershipApplicationPage) {
     });
 
 
-    const applicationDogSportsCheckboxGrid =
-        document.getElementById("applicationDogSportsCheckboxGrid");
+    const applicationCustomQuestions =
+        document.getElementById("applicationCustomQuestions");
 
-
-    DOG_SPORT_OPTIONS.forEach((option) => {
+    const appendChoice = (parent, question, option, inputType) => {
         const label = document.createElement("label");
         label.className = "checkbox-option";
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.value = option.id;
-        checkbox.dataset.applicationDogSport = "true";
+        const input = document.createElement("input");
+        input.type = inputType;
+        input.name = `custom-question-${question.id}`;
+        input.value = option.id;
         const labelText = document.createElement("span");
         labelText.textContent = option.label;
-        label.append(checkbox, labelText);
-        applicationDogSportsCheckboxGrid.appendChild(label);
-    });
+        label.append(input, labelText);
+        parent.appendChild(label);
+    };
+
+    const renderApplicationQuestions = () => {
+        applicationCustomQuestions.replaceChildren();
+        applicationQuestions.filter((question) => question.active).forEach((question) => {
+            const wrapper = document.createElement("div");
+            wrapper.className = "application-custom-question";
+            wrapper.dataset.questionId = question.id;
+            wrapper.dataset.questionType = question.type;
+
+            const labelText = document.createTextNode(question.label);
+            const requiredMarker = document.createElement("span");
+            requiredMarker.setAttribute("aria-hidden", "true");
+            requiredMarker.textContent = question.required ? " *" : "";
+
+            if (question.type === "shortText" || question.type === "longText") {
+                const label = document.createElement("label");
+                const control = document.createElement(
+                    question.type === "longText" ? "textarea" : "input"
+                );
+                if (question.type === "shortText") control.type = "text";
+                if (question.type === "longText") control.rows = 6;
+                label.append(labelText, requiredMarker, control);
+                wrapper.appendChild(label);
+            } else {
+                const fieldset = document.createElement("fieldset");
+                fieldset.className = "application-fieldset";
+                const legend = document.createElement("legend");
+                legend.append(labelText, requiredMarker);
+                fieldset.appendChild(legend);
+                if (question.type === "yesNo") {
+                    appendChoice(fieldset, question, { id: "yes", label: "Yes" }, "radio");
+                    appendChoice(fieldset, question, { id: "no", label: "No" }, "radio");
+                } else if (question.type === "singleSelect") {
+                    getApplicationQuestionOptions(question).forEach((option) =>
+                        appendChoice(fieldset, question, option, "radio")
+                    );
+                } else {
+                    const grid = document.createElement("div");
+                    grid.className = "checkbox-grid";
+                    getApplicationQuestionOptions(question).forEach((option) =>
+                        appendChoice(grid, question, option, "checkbox")
+                    );
+                    fieldset.appendChild(grid);
+                }
+                wrapper.appendChild(fieldset);
+                if (question.type === "yesNo" && question.requiresExplanationWhen) {
+                    const explanationField = document.createElement("div");
+                    explanationField.className = "form-field custom-question-explanation";
+                    explanationField.hidden = true;
+                    const explanationLabel = document.createElement("label");
+                    explanationLabel.textContent = question.explanationLabel || "Please explain.";
+                    const explanation = document.createElement("textarea");
+                    explanation.rows = 5;
+                    explanation.dataset.questionExplanation = "true";
+                    explanationLabel.appendChild(explanation);
+                    explanationField.appendChild(explanationLabel);
+                    wrapper.appendChild(explanationField);
+                    wrapper.querySelectorAll('input[type="radio"]').forEach((radio) => {
+                        radio.addEventListener("change", () => {
+                            explanationField.hidden = wrapper.querySelector("input:checked")?.value !== "yes";
+                        });
+                    });
+                }
+            }
+            applicationCustomQuestions.appendChild(wrapper);
+        });
+    };
 
 
     const applicationFieldIds = {
@@ -747,9 +1030,7 @@ if (membershipApplicationPage) {
         address: "applicationAddress",
         city: "applicationCity",
         zip: "applicationZip",
-        membershipType: "applicationMembershipType",
-        animalOrganizations: "animalOrganizations",
-        disciplineExplanation: "disciplineExplanation"
+        membershipType: "applicationMembershipType"
     };
 
 
@@ -931,21 +1212,39 @@ if (membershipApplicationPage) {
     });
 
 
-    const updateDisciplineExplanationVisibility = () => {
-        const selectedValue = membershipApplicationForm.querySelector(
-            'input[name="disciplineHistory"]:checked'
-        )?.value;
-        document.getElementById("disciplineExplanationField").hidden =
-            selectedValue !== "yes";
-    };
-
-
-    membershipApplicationForm.querySelectorAll(
-        'input[name="disciplineHistory"]'
-    ).forEach((radio) => radio.addEventListener(
-        "change",
-        updateDisciplineExplanationVisibility
-    ));
+    const collectCustomQuestionResponses = () =>
+        applicationQuestions.filter((question) => question.active).map((question) => {
+            const wrapper = Array.from(applicationCustomQuestions.children).find(
+                (element) => element.dataset.questionId === question.id
+            );
+            let answer = null;
+            if (question.type === "shortText" || question.type === "longText") {
+                answer = wrapper?.querySelector("input, textarea")?.value.trim() || "";
+            } else if (question.type === "yesNo") {
+                const value = wrapper?.querySelector("input:checked")?.value;
+                answer = value === "yes" ? true : value === "no" ? false : null;
+            } else if (question.type === "singleSelect") {
+                answer = wrapper?.querySelector("input:checked")?.value || "";
+            } else if (question.type === "multiSelect") {
+                answer = Array.from(
+                    wrapper?.querySelectorAll("input:checked") || [],
+                    (input) => input.value
+                );
+            }
+            const response = {
+                questionId: question.id,
+                questionLabel: question.label,
+                questionType: question.type,
+                required: question.required,
+                answer
+            };
+            if (question.type === "yesNo" && question.requiresExplanationWhen) {
+                response.requiresExplanationWhen = true;
+                response.explanationLabel = question.explanationLabel || "Please explain.";
+                response.explanation = wrapper?.querySelector("[data-question-explanation]")?.value.trim() || "";
+            }
+            return response;
+        });
 
 
     const collectApplicationData = () => {
@@ -954,31 +1253,7 @@ if (membershipApplicationPage) {
             data[fieldName] = document.getElementById(elementId).value.trim();
         });
 
-        const disciplineValue = membershipApplicationForm.querySelector(
-            'input[name="disciplineHistory"]:checked'
-        )?.value;
-
-        data.disciplineHistory =
-            disciplineValue === "yes"
-                ? true
-                : disciplineValue === "no"
-                    ? false
-                    : null;
-        const ownershipValue = membershipApplicationForm.querySelector(
-            'input[name="ownsBeauceron"]:checked'
-        )?.value;
-        data.ownsBeauceron =
-            ownershipValue === "yes"
-                ? true
-                : ownershipValue === "no"
-                    ? false
-                    : null;
-        data.dogSports = Array.from(
-            applicationDogSportsCheckboxGrid.querySelectorAll(
-                'input[data-application-dog-sport="true"]:checked'
-            ),
-            (checkbox) => checkbox.value
-        );
+        data.customQuestionResponses = collectCustomQuestionResponses();
         data.bylawsAccepted = document.getElementById("bylawsAccepted").checked;
         data.codeOfEthicsAccepted = document.getElementById("codeOfEthicsAccepted").checked;
         data.communicationsConsent = document.getElementById("communicationsConsent").checked;
@@ -1050,14 +1325,36 @@ if (membershipApplicationPage) {
         if (!data.bylawsAccepted || !data.codeOfEthicsAccepted) {
             return "You must accept the WBA Bylaws and Code of Ethics before submitting.";
         }
-        if (data.disciplineHistory === null) {
-            return "Please answer the discipline history question.";
+        if (!data.communicationsConsent) {
+            return "You must accept electronic communications before submitting.";
         }
-        if (data.disciplineHistory && !data.disciplineExplanation) {
-            return "Please provide an explanation of your discipline history.";
+        const invalidRequiredQuestion = data.customQuestionResponses.find(
+            (response) => !hasValidRequiredQuestionAnswer(response)
+        );
+        if (invalidRequiredQuestion) {
+            return `Please answer: ${invalidRequiredQuestion.questionLabel}`;
         }
-        if (typeof data.ownsBeauceron !== "boolean") {
-            return "Please answer whether you currently own a Beauceron.";
+        const missingRequiredExplanation = data.customQuestionResponses.find(
+            (response) => response.requiresExplanationWhen === true &&
+                response.answer === true &&
+                (!response.explanation || !response.explanation.trim())
+        );
+        if (missingRequiredExplanation) {
+            return `Please provide an explanation for: ${missingRequiredExplanation.questionLabel}`;
+        }
+        const invalidOptionResponse = data.customQuestionResponses.find((response) => {
+            if (!["singleSelect", "multiSelect"].includes(response.questionType)) return false;
+            const question = applicationQuestions.find(
+                (candidate) => candidate.id === response.questionId
+            );
+            const allowedIds = new Set(
+                getApplicationQuestionOptions(question || {}).map((option) => option.id)
+            );
+            const answers = Array.isArray(response.answer) ? response.answer : [response.answer];
+            return answers.some((answer) => answer && !allowedIds.has(answer));
+        });
+        if (invalidOptionResponse) {
+            return `Please select a valid answer for: ${invalidOptionResponse.questionLabel}`;
         }
 
         if (data.sponsorRequested) {
@@ -1082,6 +1379,15 @@ if (membershipApplicationPage) {
 
     const buildApplicationWriteData = (applicationStatus) => {
         const now = new Date().toISOString();
+        const isResubmission = currentApplication?.applicationStatus === "Needs Revision" &&
+            applicationStatus === "Submitted";
+        const revisionMetadata = currentApplication?.revisionRequestMessage
+            ? {
+                revisionRequestMessage: currentApplication.revisionRequestMessage,
+                revisionRequestedAt: currentApplication.revisionRequestedAt,
+                revisionRequestedBy: currentApplication.revisionRequestedBy
+            }
+            : {};
         return {
             applicantUid: applicationUser.uid,
             ...collectApplicationData(),
@@ -1089,7 +1395,17 @@ if (membershipApplicationPage) {
             applicationStatus,
             createdAt: currentApplication?.createdAt || now,
             updatedAt: now,
-            ...(applicationStatus === "Submitted" ? { submittedAt: now } : {})
+            ...revisionMetadata,
+            ...(isResubmission
+                ? { resubmittedAt: now }
+                : currentApplication?.resubmittedAt
+                    ? { resubmittedAt: currentApplication.resubmittedAt }
+                    : {}),
+            ...(currentApplication?.submittedAt
+                ? { submittedAt: currentApplication.submittedAt }
+                : applicationStatus === "Submitted"
+                    ? { submittedAt: now }
+                    : {})
         };
     };
 
@@ -1156,30 +1472,35 @@ if (membershipApplicationPage) {
         document.getElementById("codeOfEthicsAccepted").checked = applicationData?.codeOfEthicsAccepted === true;
         document.getElementById("communicationsConsent").checked = applicationData?.communicationsConsent === true;
 
-        if (applicationData?.disciplineHistory === true) {
-            membershipApplicationForm.querySelector('[name="disciplineHistory"][value="yes"]').checked = true;
-        } else if (applicationData?.disciplineHistory === false) {
-            membershipApplicationForm.querySelector('[name="disciplineHistory"][value="no"]').checked = true;
-        }
-
-        if (applicationData?.ownsBeauceron === true) {
-            membershipApplicationForm.querySelector('[name="ownsBeauceron"][value="yes"]').checked = true;
-        } else if (applicationData?.ownsBeauceron === false) {
-            membershipApplicationForm.querySelector('[name="ownsBeauceron"][value="no"]').checked = true;
-        }
-
-        const selectedDogSports = hasSavedValue("dogSports")
-            ? applicationData.dogSports
-            : userData.dogSports;
-        const validSelectedDogSports = new Set(
-            Array.isArray(selectedDogSports)
-                ? selectedDogSports.filter((sportId) => DOG_SPORT_IDS.has(sportId))
-                : []
+        const savedQuestionResponses = new Map(
+            getApplicationQuestionResponses(applicationData).map((response) => [
+                response.questionId,
+                response.answer
+            ])
         );
-        applicationDogSportsCheckboxGrid.querySelectorAll(
-            'input[data-application-dog-sport="true"]'
-        ).forEach((checkbox) => {
-            checkbox.checked = validSelectedDogSports.has(checkbox.value);
+        Array.from(applicationCustomQuestions.children).forEach((wrapper) => {
+            const answer = savedQuestionResponses.get(wrapper.dataset.questionId);
+            if (wrapper.dataset.questionType === "shortText" || wrapper.dataset.questionType === "longText") {
+                wrapper.querySelector("input, textarea").value = typeof answer === "string" ? answer : "";
+            } else if (wrapper.dataset.questionType === "yesNo") {
+                const value = answer === true ? "yes" : answer === false ? "no" : "";
+                wrapper.querySelectorAll("input").forEach((input) => {
+                    input.checked = input.value === value;
+                });
+                const response = getApplicationQuestionResponses(applicationData).find(
+                    (candidate) => candidate.questionId === wrapper.dataset.questionId
+                );
+                const explanation = wrapper.querySelector("[data-question-explanation]");
+                if (explanation) {
+                    explanation.value = response?.explanation || "";
+                    explanation.closest(".custom-question-explanation").hidden = answer !== true;
+                }
+            } else {
+                const selected = new Set(Array.isArray(answer) ? answer : [answer]);
+                wrapper.querySelectorAll("input").forEach((input) => {
+                    input.checked = selected.has(input.value);
+                });
+            }
         });
 
         selectedSponsorUserId = applicationData?.sponsorUserId || "";
@@ -1190,7 +1511,6 @@ if (membershipApplicationPage) {
             selectedSponsorDisplayName = "";
         }
         renderSelectedSponsor();
-        updateDisciplineExplanationVisibility();
         updateMembershipEligibilityMessage();
 
     };
@@ -1243,7 +1563,7 @@ if (membershipApplicationPage) {
 
             if (!applicationUser) return;
 
-            if (currentApplication && currentApplication.applicationStatus !== "Draft") {
+            if (currentApplication && !["Draft", "Needs Revision"].includes(currentApplication.applicationStatus)) {
                 applicationFormMessage.textContent =
                     "This application is no longer editable.";
                 return;
@@ -1256,15 +1576,20 @@ if (membershipApplicationPage) {
                 const selectedType = applicationMembershipType.value;
                 membershipConfig = await loadMembershipConfig();
                 renderMembershipTypeCards(selectedType);
-                const draftData = buildApplicationWriteData("Draft");
+                const savedStatus = currentApplication?.applicationStatus === "Needs Revision"
+                    ? "Needs Revision"
+                    : "Draft";
+                const draftData = buildApplicationWriteData(savedStatus);
                 await setDoc(
                     doc(db, "membershipApplications", applicationUser.uid),
                     draftData
                 );
                 currentApplication = draftData;
-                document.getElementById("applicationStatus").textContent = "Draft";
+                document.getElementById("applicationStatus").textContent = savedStatus;
                 applicationFormMessage.textContent =
-                    "Your application draft has been saved.";
+                    savedStatus === "Needs Revision"
+                        ? "Your application revisions have been saved. Submit when your corrections are complete."
+                        : "Your application draft has been saved.";
             } catch (error) {
                 console.error("Application draft could not be saved.", error);
                 applicationFormMessage.textContent =
@@ -1287,7 +1612,7 @@ if (membershipApplicationPage) {
                 return;
             }
 
-            if (currentApplication && currentApplication.applicationStatus !== "Draft") {
+            if (currentApplication && !["Draft", "Needs Revision"].includes(currentApplication.applicationStatus)) {
                 applicationFormMessage.textContent =
                     "This application has already been submitted and cannot be edited.";
                 return;
@@ -1340,17 +1665,40 @@ if (membershipApplicationPage) {
             }
 
             applicationFormMessage.textContent = "Submitting your application...";
+            const isRevisionResubmission = currentApplication?.applicationStatus === "Needs Revision";
 
             try {
-                await setDoc(
-                    doc(db, "membershipApplications", user.uid),
-                    submissionData
-                );
+                const applicationRef = doc(db, "membershipApplications", user.uid);
+                if (isRevisionResubmission) {
+                    const correctedRevisionData = buildApplicationWriteData("Needs Revision");
+                    await setDoc(applicationRef, correctedRevisionData);
+                    const resubmissionTransition = {
+                        applicationStatus: "Submitted",
+                        updatedAt: submissionData.updatedAt,
+                        resubmittedAt: submissionData.resubmittedAt
+                    };
+                    console.log("[Application Resubmission Transition Debug]", {
+                        oldStatus: correctedRevisionData.applicationStatus,
+                        newStatus: resubmissionTransition.applicationStatus,
+                        writeKeys: Object.keys(resubmissionTransition),
+                        submittedAtPresent: Boolean(correctedRevisionData.submittedAt),
+                        resubmittedAtPresent: Boolean(resubmissionTransition.resubmittedAt),
+                        revisionMessagePresent: Boolean(correctedRevisionData.revisionRequestMessage),
+                        revisionRequestedAtPresent: Boolean(correctedRevisionData.revisionRequestedAt),
+                        revisionRequestedByPresent: Boolean(correctedRevisionData.revisionRequestedBy)
+                    });
+                    await updateDoc(applicationRef, resubmissionTransition);
+                } else {
+                    await setDoc(applicationRef, submissionData);
+                }
                 currentApplication = submissionData;
                 document.getElementById("applicationStatus").textContent = "Submitted";
                 applicationFormMessage.textContent =
                     "Your application has been submitted for review.";
                 setApplicationReadOnly(true);
+                if (isRevisionResubmission) {
+                    window.location.href = "membership-status.html";
+                }
             } catch (error) {
                 console.error("Application could not be submitted.", error);
                 applicationFormMessage.textContent =
@@ -1478,7 +1826,10 @@ if (membershipApplicationPage) {
             if (refreshedApplicationUser.emailVerified) {
                 try {
                     const applicationRoute =
-                        await getPostLoginRoute(refreshedApplicationUser);
+                        await getPostLoginRoute(
+                            refreshedApplicationUser,
+                            { allowRevisionEditing: true }
+                        );
 
                     if (applicationRoute.destination !== "membership-application.html") {
                         redirectToPage(
@@ -1517,12 +1868,13 @@ if (membershipApplicationPage) {
                         applicationUser.uid
                     );
 
-                const [applicationSnapshot, userSnapshot, memberProfilesSnapshot, loadedMembershipConfig] =
+                const [applicationSnapshot, userSnapshot, memberProfilesSnapshot, loadedMembershipConfig, loadedApplicationQuestions] =
                     await Promise.all([
                         getDoc(applicationRef),
                         getDoc(doc(db, "users", applicationUser.uid)),
                         getDocs(collection(db, "memberProfiles")),
-                        loadMembershipConfig()
+                        loadMembershipConfig(),
+                        loadMembershipApplicationQuestions()
                     ]);
 
                 membershipConfig = loadedMembershipConfig;
@@ -1530,6 +1882,23 @@ if (membershipApplicationPage) {
                 currentApplication = applicationSnapshot.exists()
                     ? applicationSnapshot.data()
                     : null;
+
+                applicationQuestions = currentApplication && !["Draft", "Needs Revision"].includes(currentApplication.applicationStatus)
+                    ? getApplicationQuestionResponses(currentApplication).map((response, index) => ({
+                        id: response.questionId,
+                        label: response.questionLabel,
+                        type: response.questionType,
+                        required: response.required,
+                        active: true,
+                        order: index,
+                        requiresExplanationWhen: response.requiresExplanationWhen === true,
+                        explanationLabel: response.explanationLabel || "Please explain.",
+                        optionSource: response.questionId === "dog-sports"
+                            ? "DOG_SPORT_OPTIONS"
+                            : undefined
+                    }))
+                    : loadedApplicationQuestions;
+                renderApplicationQuestions();
 
                 const userData = userSnapshot.exists()
                     ? userSnapshot.data()
@@ -1553,7 +1922,14 @@ if (membershipApplicationPage) {
                 document.getElementById("applicationStatus").textContent =
                     applicationStatus;
 
-                if (applicationStatus !== "Draft") {
+                const isRevision = applicationStatus === "Needs Revision";
+                document.getElementById("applicationRevisionBanner").hidden = !isRevision;
+                document.getElementById("applicationRevisionMessage").textContent =
+                    isRevision
+                        ? currentApplication.revisionRequestMessage || "Please review your application and provide the requested information."
+                        : "";
+
+                if (applicationStatus !== "Draft" && !isRevision) {
                     setApplicationReadOnly(true);
                     applicationFormMessage.textContent =
                         applicationStatus === "Submitted"
@@ -1615,6 +1991,7 @@ if (membershipProgress) {
             const heading = document.getElementById("membershipProgressHeading");
             const message = document.getElementById("membershipProgressMessage");
             const nextStep = document.getElementById("membershipProgressNextStepMessage");
+            const revisionPanel = document.getElementById("applicationRevisionPanel");
 
             document.getElementById("progressApplicationStatus").textContent =
                 applicationStatus || "No Application";
@@ -1622,8 +1999,17 @@ if (membershipProgress) {
                 membershipStatus || "No Current Membership";
             document.getElementById("progressSponsorStatusDetail").hidden =
                 route.applicationData?.sponsorRequested !== true;
+            revisionPanel.hidden = applicationStatus !== "Needs Revision";
+            document.getElementById("applicationRevisionRequestMessage").textContent =
+                applicationStatus === "Needs Revision"
+                    ? route.applicationData?.revisionRequestMessage || "Please review your application and provide the requested information."
+                    : "";
 
-            if (membershipStatus === "Pending Dues") {
+            if (applicationStatus === "Needs Revision") {
+                heading.textContent = "Application Needs Additional Information";
+                message.textContent = "Your application has been reviewed and additional information or clarification is needed before it can be forwarded to the WBA Board of Directors.";
+                nextStep.textContent = "Review the requested changes below, then edit and resubmit your application.";
+            } else if (membershipStatus === "Pending Dues") {
                 heading.textContent = "Application Approved — Membership Dues Pending";
                 message.textContent = "Your application has been approved. Your membership will become Active after the required dues step is completed.";
                 nextStep.textContent = "Online dues and payment functionality will be added later. The WBA will provide further instructions.";
@@ -2554,9 +2940,13 @@ const getApplicationMembershipYear = (applicationData) => {
         : submittedDate.getFullYear();
 };
 
-const getApplicationApplicantName = (applicationData) =>
-    `${applicationData?.preferredName || applicationData?.firstName || ""} ${applicationData?.lastName || ""}`.trim() ||
-    "Unnamed Applicant";
+const getApplicationApplicantName = (applicationData) => {
+    const givenName = String(
+        applicationData?.preferredName || applicationData?.firstName || ""
+    ).trim();
+    const lastName = String(applicationData?.lastName || "").trim();
+    return [givenName, lastName].filter(Boolean).join(" ") || "Applicant";
+};
 
 const getSponsorReviewState = (applicationData, memberAccountsByUid) => {
     if (applicationData?.sponsorRequested === true) {
@@ -2645,7 +3035,9 @@ if (adminApplications) {
                         ? `Sponsored by ${applicationData.sponsorDisplayName}`
                         : "Sponsor not recorded"],
                 ["Sponsorship Review", sponsorReview.label],
-                ["Status", applicationData.applicationStatus]
+                ["Status", applicationData.applicationStatus === "Needs Revision"
+                    ? "Needs Applicant Revision"
+                    : applicationData.applicationStatus]
             ];
             rows.forEach(([term, value]) => {
                 const dt = document.createElement("dt");
@@ -2687,7 +3079,7 @@ if (adminApplications) {
             );
             loadedApplications = applications
                 .filter((applicationData) =>
-                    ["Submitted", "Awaiting Board Decision", "Approved", "Declined"].includes(applicationData.applicationStatus)
+                    ["Submitted", "Needs Revision", "Awaiting Board Decision", "Approved", "Declined"].includes(applicationData.applicationStatus)
                 );
             renderApplications();
             adminApplications.hidden = false;
@@ -2710,15 +3102,42 @@ if (adminApplicationDetail) {
     const sponsorResults = document.getElementById("adminSponsorResults");
     const actions = document.getElementById("adminReviewActions");
     const sendToBoardReviewButton = document.getElementById("sendToBoardReviewButton");
+    const sendBackForRevisionButton = document.getElementById("sendBackForRevisionButton");
+    const revisionRequestPanel = document.getElementById("adminRevisionRequestPanel");
+    const revisionRequestMessage = document.getElementById("adminRevisionRequestMessage");
     const boardDecisionControls = document.getElementById("boardDecisionControls");
     const decisionHelp = document.getElementById("adminDecisionHelp");
     const message = document.getElementById("adminApplicationMessage");
+    const downloadApplicationPdfButton = document.getElementById("adminDownloadApplicationPdfButton");
+    const applicationPdfMessage = document.getElementById("adminApplicationPdfMessage");
     const applicantUid = new URLSearchParams(window.location.search).get("id")?.trim() || "";
     let applicationData = null;
     let applicantData = null;
     let activeSponsors = [];
     let memberAccountsByUid = new Map();
     let adminUser = null;
+
+    downloadApplicationPdfButton.addEventListener("click", async () => {
+        if (!applicationData || !canDownloadMembershipApplicationPdf(applicationData)) return;
+        downloadApplicationPdfButton.disabled = true;
+        applicationPdfMessage.textContent = "Preparing application PDF...";
+        try {
+            const questionRows = getApplicationQuestionResponses(applicationData).map((response) => [
+                response.questionLabel || response.questionId,
+                formatApplicationQuestionAnswer(response)
+            ]);
+            await generateMembershipApplicationPdf(
+                applicationData,
+                questionRows
+            );
+            applicationPdfMessage.textContent = "The application PDF has been downloaded.";
+        } catch (error) {
+            console.error("Admin application PDF could not be generated.", error);
+            applicationPdfMessage.textContent = error.message || "We couldn't create the application PDF. Please try again.";
+        } finally {
+            downloadApplicationPdfButton.disabled = false;
+        }
+    });
 
     const yesNo = (value) => value === true ? "Yes" : value === false ? "No" : "—";
     const renderSection = (title, rows) => {
@@ -2744,17 +3163,19 @@ if (adminApplicationDetail) {
         const juniorAge = applicationData.membershipType === "Junior" && membershipYear
             ? getAgeOnJanuaryFirst(applicationData.dateOfBirth, membershipYear)
             : null;
-        const sportLabels = Array.isArray(applicationData.dogSports)
-            ? applicationData.dogSports.map((id) => DOG_SPORT_LABELS.get(id) || id).join(", ")
-            : "—";
+        const questionResponses = getApplicationQuestionResponses(applicationData);
         document.getElementById("adminApplicationApplicantName").textContent =
             getApplicationApplicantName(applicationData);
+        downloadApplicationPdfButton.hidden = !canDownloadMembershipApplicationPdf(applicationData);
         renderSection("Application Information", [
-            ["Application Status", applicationData.applicationStatus],
+            ["Application Status", applicationData.applicationStatus === "Needs Revision"
+                ? "Waiting for Applicant Revision"
+                : applicationData.applicationStatus],
             ["Submitted Date", formatApplicationDate(applicationData.submittedAt)],
             ["Sent to Board", applicationData.adminReviewedAt ? formatApplicationDate(applicationData.adminReviewedAt) : undefined],
             ["Reviewed Date", applicationData.reviewedAt ? formatApplicationDate(applicationData.reviewedAt) : undefined],
             ["Decline Reason (Admin-only)", applicationData.applicationStatus === "Declined" ? applicationData.declineReason : undefined],
+            ["Revision Request", applicationData.applicationStatus === "Needs Revision" ? applicationData.revisionRequestMessage : undefined],
             ["Membership Year", membershipYear || "—"],
             ["Membership Type", applicationData.membershipType],
             ["Dues Amount at Submission", typeof applicationData.membershipDuesAmount === "number" ? `$${applicationData.membershipDuesAmount}` : "—"],
@@ -2768,12 +3189,16 @@ if (adminApplicationDetail) {
         renderSection("Address", [["Country", applicationData.countryName || applicationData.country], ["State / Province / Region", applicationData.subdivisionName || applicationData.state], ["Street Address", applicationData.address], ["City", applicationData.city], ["ZIP / Postal Code", applicationData.zip]]);
         renderSection("Sponsor", [["Sponsor Status", applicationData.sponsorRequested === true ? "Sponsor Request Pending" : applicationData.sponsorDisplayName ? `Sponsored by ${applicationData.sponsorDisplayName}` : "No sponsor recorded"], ["Assigned At", formatApplicationDate(applicationData.sponsorAssignedAt)]]);
         renderSection("Agreements", [["Bylaws Accepted", yesNo(applicationData.bylawsAccepted)], ["Code of Ethics Accepted", yesNo(applicationData.codeOfEthicsAccepted)], ["Communications Consent", yesNo(applicationData.communicationsConsent)]]);
-        renderSection("Animal Organizations", [["Organizations", applicationData.animalOrganizations]]);
-        renderSection("Discipline History", [["History", yesNo(applicationData.disciplineHistory)], ["Explanation", applicationData.disciplineHistory === true ? applicationData.disciplineExplanation : undefined]]);
-        renderSection("Beauceron Ownership", [["Currently Owns a Beauceron", yesNo(applicationData.ownsBeauceron)]]);
-        renderSection("Dog Sports & Activities", [["Current Activities", sportLabels || "None selected"]]);
+        renderSection(
+            "Additional Application Questions",
+            questionResponses.map((response) => [
+                response.questionLabel || response.questionId,
+                formatApplicationQuestionAnswer(response)
+            ])
+        );
 
         const isSubmitted = applicationData.applicationStatus === "Submitted";
+        const isNeedsRevision = applicationData.applicationStatus === "Needs Revision";
         const isAwaitingBoard = applicationData.applicationStatus === "Awaiting Board Decision";
         const sponsorReview = getSponsorReviewState(
             applicationData,
@@ -2785,14 +3210,19 @@ if (adminApplicationDetail) {
             ? `${sponsorReview.label}: ${sponsorReview.reason}`
             : "";
         sponsorPanel.hidden = !(isSubmitted || isAwaitingBoard) || !sponsorNeedsResolution;
-        actions.hidden = !(isSubmitted || isAwaitingBoard);
+        actions.hidden = false;
         sendToBoardReviewButton.hidden = !isSubmitted;
+        sendBackForRevisionButton.hidden = !isSubmitted;
+        revisionRequestPanel.hidden = true;
+        revisionRequestMessage.value = "";
         boardDecisionControls.hidden = !isAwaitingBoard;
         decisionHelp.textContent = isSubmitted
             ? "Confirm the application is complete and ready before sending it to the Board."
             : isAwaitingBoard
                 ? "Record the Board's final decision after it has been made outside the portal."
-                : "";
+                : isNeedsRevision
+                    ? "Waiting for Applicant Revision."
+                    : "Download the frozen application record as a PDF.";
     };
 
     const validateApplicationReadiness = async () => {
@@ -2818,7 +3248,19 @@ if (adminApplicationDetail) {
             return "The membership type does not match the applicant's country classification.";
         }
         const required = ["firstName", "lastName", "email", "phone", "address", "city", "zip", "countryCode", "membershipType"];
-        if (required.some((field) => !applicationData[field]) || typeof applicationData.disciplineHistory !== "boolean" || typeof applicationData.ownsBeauceron !== "boolean" || applicationData.bylawsAccepted !== true || applicationData.codeOfEthicsAccepted !== true) {
+        const questionResponses = getApplicationQuestionResponses(applicationData);
+        const hasMalformedQuestionResponse = Array.isArray(applicationData.customQuestionResponses) &&
+            applicationData.customQuestionResponses.some(
+                (response) => !hasValidApplicationQuestionResponseShape(response)
+            );
+        const hasMissingRequiredQuestion = questionResponses
+            .some((response) => !hasValidRequiredQuestionAnswer(response));
+        const hasMissingRequiredExplanation = questionResponses.some(
+            (response) => response.requiresExplanationWhen === true &&
+                response.answer === true &&
+                (!response.explanation || !response.explanation.trim())
+        );
+        if (required.some((field) => !applicationData[field]) || hasMalformedQuestionResponse || hasMissingRequiredQuestion || hasMissingRequiredExplanation || applicationData.bylawsAccepted !== true || applicationData.codeOfEthicsAccepted !== true || applicationData.communicationsConsent !== true) {
             return "This application is missing required submitted information and cannot continue.";
         }
         return "";
@@ -2928,6 +3370,69 @@ if (adminApplicationDetail) {
         }
     });
 
+    sendBackForRevisionButton.addEventListener("click", async () => {
+        if (applicationData.applicationStatus !== "Submitted") {
+            message.textContent = "Only Submitted applications can be sent back to the applicant.";
+            return;
+        }
+        if (revisionRequestPanel.hidden) {
+            revisionRequestPanel.hidden = false;
+            revisionRequestMessage.focus();
+            message.textContent = "Enter the changes the applicant needs to make, then select Send Back to Applicant again.";
+            return;
+        }
+        const requestedRevision = revisionRequestMessage.value.trim();
+        if (!requestedRevision) {
+            message.textContent = "Enter a message explaining what the applicant needs to correct or clarify.";
+            revisionRequestMessage.focus();
+            return;
+        }
+        try {
+            const applicationRef = doc(db, "membershipApplications", applicantUid);
+            const refreshedApplication = await getDoc(applicationRef);
+            if (!refreshedApplication.exists() || refreshedApplication.data().applicationStatus !== "Submitted") {
+                if (refreshedApplication.exists()) {
+                    applicationData = { applicantUid, ...refreshedApplication.data() };
+                    renderApplication();
+                }
+                message.textContent = "This application is no longer awaiting initial review.";
+                return;
+            }
+            const revisionRequestedAt = new Date().toISOString();
+            const batch = writeBatch(db);
+            batch.set(applicationRef, {
+                applicationStatus: "Needs Revision",
+                revisionRequestMessage: requestedRevision,
+                revisionRequestedAt,
+                revisionRequestedBy: adminUser.uid
+            }, { merge: true });
+            batch.set(createMemberHistoryRef(applicantUid), buildMemberHistoryEntry({
+                memberUid: applicantUid,
+                action: "APPLICATION_REVISION_REQUESTED",
+                category: "application",
+                performedBy: adminUser.uid,
+                field: "applicationStatus",
+                oldValue: "Submitted",
+                newValue: "Needs Revision",
+                source: "Admin Application Review",
+                note: "Application returned to applicant for revision."
+            }));
+            await batch.commit();
+            applicationData = {
+                ...applicationData,
+                applicationStatus: "Needs Revision",
+                revisionRequestMessage: requestedRevision,
+                revisionRequestedAt,
+                revisionRequestedBy: adminUser.uid
+            };
+            renderApplication();
+            message.textContent = "Application sent back to the applicant for revision.";
+        } catch (error) {
+            console.error("Application revision request failed.", error);
+            message.textContent = "We couldn't send this application back to the applicant.";
+        }
+    });
+
     document.getElementById("recordBoardApprovalButton").addEventListener("click", async () => {
         message.textContent = "Validating application...";
         try {
@@ -2951,10 +3456,26 @@ if (adminApplicationDetail) {
             if (!refreshedApplicant.exists()) throw new Error("Applicant account no longer exists.");
             applicantData = refreshedApplicant.data();
             const reviewedAt = new Date().toISOString();
-            const updatedUserData = { ...applicantData, membershipStatus: "Pending Dues", membershipUpdatedAt: reviewedAt, membershipUpdatedBy: adminUser.uid };
+            const applicantIdentityUpdate = {
+                firstName: applicationData.firstName || "",
+                lastName: applicationData.lastName || "",
+                preferredName: applicationData.preferredName || "",
+                email: applicationData.email || applicantData.email || ""
+            };
+            const updatedUserData = {
+                ...applicantData,
+                membershipStatus: "Pending Dues",
+                membershipUpdatedAt: reviewedAt,
+                membershipUpdatedBy: adminUser.uid
+            };
             const batch = writeBatch(db);
             batch.set(doc(db, "membershipApplications", applicantUid), { applicationStatus: "Approved", reviewedAt, reviewedBy: adminUser.uid }, { merge: true });
-            batch.set(doc(db, "users", applicantUid), { membershipStatus: "Pending Dues", membershipUpdatedAt: reviewedAt, membershipUpdatedBy: adminUser.uid }, { merge: true });
+            batch.set(doc(db, "users", applicantUid), {
+                ...applicantIdentityUpdate,
+                membershipStatus: "Pending Dues",
+                membershipUpdatedAt: reviewedAt,
+                membershipUpdatedBy: adminUser.uid
+            }, { merge: true });
             batch.set(doc(db, "memberProfiles", applicantUid), buildMemberProfileData(applicantUid, updatedUserData));
             batch.set(createMemberHistoryRef(applicantUid), buildMemberHistoryEntry({
                 memberUid: applicantUid,
@@ -3040,7 +3561,7 @@ if (adminApplicationDetail) {
                 getDoc(doc(db, "users", applicantUid)),
                 loadAdminMemberAccounts()
             ]);
-            if (!applicationSnapshot.exists() || !["Submitted", "Awaiting Board Decision", "Approved", "Declined"].includes(applicationSnapshot.data().applicationStatus)) {
+            if (!applicationSnapshot.exists() || !["Submitted", "Needs Revision", "Awaiting Board Decision", "Approved", "Declined"].includes(applicationSnapshot.data().applicationStatus)) {
                 accessMessage.textContent = "That reviewable application could not be found.";
                 return;
             }
@@ -3164,9 +3685,13 @@ if (adminMemberDirectory) {
     const getAdminMemberName =
         (memberData) => {
 
-            return `${memberData.preferredName || memberData.firstName || ""} ${memberData.lastName || ""}`
-                .trim() ||
-                "Unnamed Account";
+            const preferredName = String(memberData.preferredName || "").trim();
+            const firstName = String(memberData.firstName || "").trim();
+            const lastName = String(memberData.lastName || "").trim();
+            const fullName = [preferredName || firstName, lastName]
+                .filter(Boolean)
+                .join(" ");
+            return fullName || String(memberData.email || "").trim() || "Member Account";
 
         };
 
@@ -3177,7 +3702,7 @@ if (adminMemberDirectory) {
         );
         const values = {
             member: hasMemberName
-                ? `${memberData.lastName || ""}\u0000${memberData.firstName || memberData.preferredName || ""}`
+                ? `${memberData.lastName || ""}\u0000${memberData.preferredName || memberData.firstName || ""}`
                 : "",
             memberId: memberData.memberId || memberData.memberNumber || "",
             email: memberData.email || "",
@@ -3433,12 +3958,32 @@ if (adminMemberDirectory) {
                 }
 
                 logAdminMembershipDebug({collectionQueryStarted: true});
-                const adminMemberAccounts = await loadAdminMemberAccounts();
+                const [adminMemberAccounts, membershipApplications] = await Promise.all([
+                    loadAdminMemberAccounts(),
+                    loadAdminApplications()
+                ]);
                 logAdminMembershipDebug({
                     collectionQuerySucceeded: true,
                     documentsReturned: adminMemberAccounts.length
                 });
-                adminMembers = buildCanonicalAdminMemberList(adminMemberAccounts);
+                const applicationsByUid = new Map(
+                    membershipApplications.map((applicationData) => [
+                        applicationData.applicantUid,
+                        applicationData
+                    ])
+                );
+                adminMembers = buildCanonicalAdminMemberList(adminMemberAccounts)
+                    .map((memberData) => {
+                        const applicationData = applicationsByUid.get(memberData.uid);
+                        if (!applicationData) return memberData;
+                        return {
+                            ...memberData,
+                            firstName: memberData.firstName || applicationData.firstName,
+                            lastName: memberData.lastName || applicationData.lastName,
+                            preferredName: memberData.preferredName || applicationData.preferredName,
+                            email: memberData.email || applicationData.email
+                        };
+                    });
                 logAdminMembershipDebug({recordsAfterFiltering: adminMembers.length});
                 adminMemberFilter.value =
                     new URLSearchParams(window.location.search).get("filter") === "dues"
@@ -3500,7 +4045,8 @@ if (adminMemberDetail) {
         MEMBERSHIP_START_DATE_CHANGED: "Membership Start Date Changed",
         MEMBERSHIP_CURRENT_THROUGH_CHANGED: "Membership Current Through Changed",
         APPLICATION_SPONSOR_ASSIGNED: "Application Sponsor Assigned",
-        APPLICATION_SENT_TO_BOARD: "Application Sent to Board Review",
+        APPLICATION_SENT_TO_BOARD: "Application Sent to Board for Review",
+        APPLICATION_REVISION_REQUESTED: "Application Sent Back to Applicant",
         APPLICATION_APPROVED: "Application Approved",
         APPLICATION_DECLINED: "Application Declined"
     };
@@ -3508,7 +4054,9 @@ if (adminMemberDetail) {
     const formatHistoryValue = (entry, value) => {
         if (value === null || value === undefined || value === "") return "Not Set";
         if (["membershipStartDate", "membershipCurrentThrough"].includes(entry.field)) {
-            const date = new Date(`${value}T00:00:00`);
+            const date = typeof value.toDate === "function"
+                ? value.toDate()
+                : new Date(`${value}T00:00:00`);
             if (!Number.isNaN(date.getTime())) {
                 return new Intl.DateTimeFormat(undefined, {
                     year: "numeric",
@@ -3526,14 +4074,26 @@ if (adminMemberDetail) {
 
         let displayName = "Admin";
         try {
-            const userSnapshot = await getDoc(doc(db, "users", adminUid));
-            if (userSnapshot.exists()) {
-                const userData = userSnapshot.data();
-                const fullName = [userData.firstName, userData.lastName]
+            const profileSnapshot = await getDoc(doc(db, "memberProfiles", adminUid));
+            if (profileSnapshot.exists()) {
+                const profileData = profileSnapshot.data();
+                const fullName = [profileData.firstName, profileData.lastName]
                     .filter((namePart) => String(namePart || "").trim())
                     .map((namePart) => String(namePart).trim())
                     .join(" ");
-                if (fullName) displayName = fullName;
+                displayName = fullName || profileData.displayName || "Admin";
+            }
+
+            if (displayName === "Admin") {
+                const userSnapshot = await getDoc(doc(db, "users", adminUid));
+                if (userSnapshot.exists()) {
+                    const userData = userSnapshot.data();
+                    const fullName = [userData.firstName, userData.lastName]
+                        .filter((namePart) => String(namePart || "").trim())
+                        .map((namePart) => String(namePart).trim())
+                        .join(" ");
+                    if (fullName) displayName = fullName;
+                }
             }
 
             if (displayName === "Admin") {
@@ -3571,7 +4131,21 @@ if (adminMemberDetail) {
         status.textContent = "Loading history...";
         const list = document.createElement("ol");
         list.className = "member-history-list";
-        panel.append(heading, status, list);
+        const controls = document.createElement("div");
+        controls.className = "member-history-controls";
+        const toggleButton = document.createElement("button");
+        toggleButton.type = "button";
+        toggleButton.textContent = "Show Full History";
+        toggleButton.hidden = true;
+        const downloadButton = document.createElement("button");
+        downloadButton.type = "button";
+        downloadButton.textContent = "Download Full History";
+        downloadButton.hidden = true;
+        const downloadStatus = document.createElement("p");
+        downloadStatus.className = "profile-muted member-history-download-status";
+        downloadStatus.setAttribute("role", "status");
+        controls.append(toggleButton, downloadButton);
+        panel.append(heading, status, controls, downloadStatus, list);
         adminMemberDetail.appendChild(panel);
 
         try {
@@ -3586,40 +4160,78 @@ if (adminMemberDetail) {
                     return secondTime - firstTime;
                 });
             await resolveHistoryAdminNames(entries);
+            entries.forEach((entry) => {
+                entry.actorName = adminNameCache.get(entry.performedBy) || "Admin";
+            });
             status.textContent = entries.length
                 ? `${entries.length} recorded event${entries.length === 1 ? "" : "s"}.`
                 : "No history has been recorded for this account yet.";
 
-            entries.forEach((entry) => {
-                const item = document.createElement("li");
-                const date = document.createElement("time");
-                date.textContent = entry.performedAt?.toDate
-                    ? new Intl.DateTimeFormat(undefined, {
-                        year: "numeric",
-                        month: "short",
-                        day: "numeric",
-                        hour: "numeric",
-                        minute: "2-digit"
-                    }).format(entry.performedAt.toDate())
-                    : "Date unavailable";
-                const title = document.createElement("strong");
-                title.textContent = historyActionLabels[entry.action] || "Administrative Event";
-                item.append(date, title);
-                if (entry.field) {
-                    const change = document.createElement("p");
-                    change.textContent = `${formatHistoryValue(entry, entry.oldValue)} → ${formatHistoryValue(entry, entry.newValue)}`;
-                    item.appendChild(change);
+            let showFullHistory = false;
+            const renderEntries = () => {
+                list.replaceChildren();
+                const visibleEntries = showFullHistory ? entries : entries.slice(0, 5);
+                visibleEntries.forEach((entry) => {
+                    const item = document.createElement("li");
+                    const date = document.createElement("time");
+                    date.textContent = entry.performedAt?.toDate
+                        ? new Intl.DateTimeFormat(undefined, {
+                            year: "numeric",
+                            month: "short",
+                            day: "numeric",
+                            hour: "numeric",
+                            minute: "2-digit"
+                        }).format(entry.performedAt.toDate())
+                        : "Date unavailable";
+                    const title = document.createElement("strong");
+                    title.textContent = historyActionLabels[entry.action] || "Administrative Event";
+                    item.append(date, title);
+                    if (entry.field) {
+                        const change = document.createElement("p");
+                        change.textContent = `${formatHistoryValue(entry, entry.oldValue)} → ${formatHistoryValue(entry, entry.newValue)}`;
+                        item.appendChild(change);
+                    }
+                    const actor = document.createElement("p");
+                    actor.className = "member-history-actor";
+                    actor.textContent = `Changed by ${entry.actorName}`;
+                    item.appendChild(actor);
+                    if (entry.note) {
+                        const note = document.createElement("p");
+                        note.textContent = entry.note;
+                        item.appendChild(note);
+                    }
+                    list.appendChild(item);
+                });
+            };
+
+            renderEntries();
+            toggleButton.hidden = entries.length <= 5;
+            downloadButton.hidden = entries.length === 0;
+            toggleButton.addEventListener("click", () => {
+                showFullHistory = !showFullHistory;
+                toggleButton.textContent = showFullHistory
+                    ? "Show Recent Only"
+                    : "Show Full History";
+                renderEntries();
+            });
+            downloadButton.addEventListener("click", async () => {
+                downloadButton.disabled = true;
+                downloadStatus.textContent = "Preparing full history PDF...";
+                try {
+                    await generateMemberHistoryPdf({
+                        memberData: loadedMemberData,
+                        entries,
+                        actionLabels: historyActionLabels,
+                        formatValue: formatHistoryValue
+                    });
+                    downloadStatus.textContent = "Full history downloaded.";
+                } catch (error) {
+                    console.error("Member history PDF could not be generated.", error);
+                    downloadStatus.textContent =
+                        "We couldn't download the full history. Please try again.";
+                } finally {
+                    downloadButton.disabled = false;
                 }
-                const actor = document.createElement("p");
-                actor.className = "member-history-actor";
-                actor.textContent = `Performed by ${adminNameCache.get(entry.performedBy) || "Admin"}`;
-                item.appendChild(actor);
-                if (entry.note) {
-                    const note = document.createElement("p");
-                    note.textContent = entry.note;
-                    item.appendChild(note);
-                }
-                list.appendChild(item);
             });
         } catch (error) {
             console.error("Member history could not be loaded.", error);
@@ -3692,6 +4304,7 @@ if (adminMemberDetail) {
         event.preventDefault();
         saveMessage.textContent = "Saving membership changes...";
         const authenticatedAdmin = auth.currentUser;
+        let writeStage = "authorization";
 
         const values = {
             memberId: document.getElementById("adminMemberId").value.trim(),
@@ -3709,12 +4322,17 @@ if (adminMemberDetail) {
         };
 
         try {
-            if (!authenticatedAdmin || !await isAuthorizedAdmin(authenticatedAdmin)) {
+            const viewerAuthorization = await getAdminAuthorization(authenticatedAdmin);
+            if (!authenticatedAdmin || !viewerAuthorization.active) {
                 window.location.replace("dashboard.html");
                 return;
             }
 
-            const currentMemberSnapshot = await getDoc(doc(db, "users", loadedMemberUid));
+            writeStage = "load-current-documents";
+            const [currentMemberSnapshot, currentMemberProfileSnapshot] = await Promise.all([
+                getDoc(doc(db, "users", loadedMemberUid)),
+                getDoc(doc(db, "memberProfiles", loadedMemberUid))
+            ]);
             if (!currentMemberSnapshot.exists()) {
                 saveMessage.textContent = "This membership account no longer exists.";
                 return;
@@ -3729,10 +4347,6 @@ if (adminMemberDetail) {
                 membershipUpdatedBy: authenticatedAdmin.uid
             };
 
-            Object.entries(values).forEach(([fieldName, value]) => {
-                membershipUpdate[fieldName] = value || deleteField();
-            });
-
             const memberProfileSource = {
                 ...loadedMemberData,
                 ...values,
@@ -3745,17 +4359,58 @@ if (adminMemberDetail) {
             };
             const memberProfileData =
                 buildMemberProfileData(loadedMemberUid, memberProfileSource);
+            const memberProfileMembershipUpdate = {
+                membershipStatus: memberProfileData.membershipStatus,
+                sponsorEligible: memberProfileData.sponsorEligible,
+                memberId: memberProfileData.memberId || deleteField(),
+                membershipType: memberProfileData.membershipType || deleteField(),
+                membershipStartDate: memberProfileData.membershipStartDate || deleteField(),
+                membershipCurrentThrough: memberProfileData.membershipCurrentThrough || deleteField()
+            };
             const batch = writeBatch(db);
             const historyChanges = Object.entries(values)
                 .map(([field, value]) => ({
                     field,
-                    oldValue: loadedMemberData[field] || null,
-                    newValue: value || null
+                    oldValue: Object.prototype.hasOwnProperty.call(loadedMemberData, field)
+                        ? loadedMemberData[field]
+                        : null,
+                    newValue: value || null,
+                    oldComparable: ["membershipStartDate", "membershipCurrentThrough"].includes(field)
+                        ? toDateInputValue(loadedMemberData[field])
+                        : String(loadedMemberData[field] || ""),
+                    newComparable: value
                 }))
-                .filter(({oldValue, newValue}) => oldValue !== newValue);
+                .filter(({oldComparable, newComparable}) => oldComparable !== newComparable);
+
+            historyChanges.forEach(({field, newValue}) => {
+                membershipUpdate[field] = newValue || deleteField();
+            });
+
+            const changedUserKeys = [
+                ...historyChanges.map(({field}) => field),
+                "membershipUpdatedAt",
+                "membershipUpdatedBy"
+            ];
+            console.log("[Admin Membership Save Debug]", {
+                viewerAdmin: viewerAuthorization.active,
+                viewerSuperAdmin: viewerAuthorization.superAdmin,
+                targetUid: loadedMemberUid,
+                oldMembershipStatus: loadedMemberData.membershipStatus || null,
+                newMembershipStatus: values.membershipStatus || null,
+                changedUserKeys,
+                memberProfileWriteIncluded: true,
+                historyWriteIncluded: historyChanges.length > 0,
+                historyActionCount: historyChanges.length
+            });
 
             batch.set(userRef, membershipUpdate, { merge: true });
-            batch.set(memberProfileRef, memberProfileData);
+            if (currentMemberProfileSnapshot.exists()) {
+                // Existing public profile content is already privacy-sanitized. Update
+                // only the canonical membership projection allowed by the Admin rule.
+                batch.set(memberProfileRef, memberProfileMembershipUpdate, { merge: true });
+            } else {
+                batch.set(memberProfileRef, memberProfileData);
+            }
             historyChanges.forEach(({field, oldValue, newValue}) => {
                 batch.set(createMemberHistoryRef(loadedMemberUid), buildMemberHistoryEntry({
                     memberUid: loadedMemberUid,
@@ -3768,6 +4423,7 @@ if (adminMemberDetail) {
                     source: "Admin Membership"
                 }));
             });
+            writeStage = "commit-membership-batch";
             await batch.commit();
 
             loadedMemberData = memberProfileSource;
@@ -3776,7 +4432,10 @@ if (adminMemberDetail) {
                 await loadMemberHistory(loadedMemberUid);
             }
         } catch (error) {
-            console.error("Admin membership changes could not be saved.", error);
+            console.error("Admin membership changes could not be saved.", {
+                writeStage,
+                error
+            });
             saveMessage.textContent = "We couldn't save the membership changes. Please try again.";
         }
     });
@@ -3789,7 +4448,7 @@ if (adminMemberDetail) {
 
         try {
             const authorization = await getAdminAuthorization(authenticatedUser);
-            canViewMemberHistory = authorization.superAdmin;
+            canViewMemberHistory = authorization.active;
             if (!authorization.active) {
                 window.location.replace("dashboard.html");
                 return;
@@ -3809,8 +4468,7 @@ if (adminMemberDetail) {
             }
 
             loadedMemberData = userSnapshot.data();
-            const fullName = `${loadedMemberData.firstName || ""} ${loadedMemberData.lastName || ""}`.trim();
-            setText("adminMemberName", fullName || "Unnamed Account");
+            setText("adminMemberName", getApplicationApplicantName(loadedMemberData));
             setText("adminMemberPreferredName", loadedMemberData.preferredName);
             setText("adminMemberEmail", loadedMemberData.email);
             setText("adminMemberUid", loadedMemberUid);

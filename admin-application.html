@@ -26,7 +26,16 @@
             <section id="adminReviewActions" class="admin-review-panel" hidden aria-labelledby="adminDecisionHeading">
                 <h3 id="adminDecisionHeading">Review Decision</h3>
                 <p id="adminDecisionHelp"></p>
-                <button type="button" id="sendToBoardReviewButton" class="primary-save-button">Send to Board Review</button>
+                <div id="initialReviewActions" class="application-form-actions">
+                    <button type="button" id="sendToBoardReviewButton" class="primary-save-button">Send to Board for Review</button>
+                    <button type="button" id="sendBackForRevisionButton">Send Back to Applicant</button>
+                    <button type="button" id="adminDownloadApplicationPdfButton">Download Application PDF</button>
+                </div>
+                <div id="adminRevisionRequestPanel" class="form-field" hidden>
+                    <label for="adminRevisionRequestMessage">Message to Applicant <span aria-hidden="true">*</span></label>
+                    <textarea id="adminRevisionRequestMessage" rows="4" placeholder="Explain what information or clarification is needed."></textarea>
+                </div>
+                <p id="adminApplicationPdfMessage" class="profile-muted" role="status"></p>
                 <div id="boardDecisionControls" hidden>
                     <div class="form-field"><label for="adminDeclineReason">Decline Reason (Admin-only)</label><textarea id="adminDeclineReason" rows="4"></textarea></div>
                     <div class="application-form-actions"><button type="button" id="recordBoardApprovalButton" class="primary-save-button">Record Board Approval</button><button type="button" id="recordBoardDeclineButton">Record Board Decline</button></div>
@@ -36,6 +45,7 @@
             <p><a href="admin-applications.html">Back to Applications</a> · <a href="admin.html">Admin Dashboard</a></p>
         </article>
     </main>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     <script type="module" src="app.js"></script>
 </body>
 </html>

@@ -393,6 +393,10 @@ body {
     margin-top: 0;
 }
 
+.application-custom-question + .application-custom-question {
+    margin-top: 1.5rem;
+}
+
 .membership-type-fieldset {
     min-width: 0;
     padding: 0;
@@ -648,6 +652,17 @@ body {
 
 .member-history-list p {
     margin: 8px 0 0;
+}
+
+.member-history-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.member-history-download-status {
+    margin: 10px 0 0;
 }
 
 .admin-page-heading {
@@ -1102,11 +1117,14 @@ a.dashboard-card:focus-visible {
 }
 
 .admin-review-flag {
-    display: inline-block;
     padding: 7px 12px;
     border: 1px solid #a65b00;
     border-radius: 999px;
     font-weight: bold;
+}
+
+.admin-review-flag:not([hidden]) {
+    display: inline-block;
 }
 
 .admin-application-card h3,

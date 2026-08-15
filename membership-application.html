@@ -45,6 +45,10 @@
             </section>
 
             <form id="membershipApplicationForm" class="profile-form">
+                <section id="applicationRevisionBanner" class="application-form-section" hidden aria-labelledby="applicationRevisionHeading">
+                    <h3 id="applicationRevisionHeading">Requested Changes</h3>
+                    <p id="applicationRevisionMessage"></p>
+                </section>
                 <section class="application-form-section" aria-labelledby="personalInformationHeading">
                     <h3 id="personalInformationHeading">Personal Information</h3>
                     <p class="field-help">Fields marked required must be completed before submission. Drafts may be saved at any time.</p>
@@ -94,27 +98,9 @@
                     </div>
                 </section>
 
-                <section class="application-form-section" aria-labelledby="animalOrganizationsHeading">
-                    <h3 id="animalOrganizationsHeading">Animal Organization Memberships</h3>
-                    <div class="form-field"><label for="animalOrganizations">Please list any other animal organizations you have been, or are currently, a member of.</label><textarea id="animalOrganizations" rows="6"></textarea></div>
-                </section>
-
-                <section class="application-form-section" aria-labelledby="disciplineHeading">
-                    <h3 id="disciplineHeading">Discipline History</h3>
-                    <fieldset class="application-fieldset"><legend>Have you previously been disciplined by a dog club, breed organization, or governing body? <span aria-hidden="true">*</span></legend><label><input type="radio" name="disciplineHistory" value="yes"> Yes</label><label><input type="radio" name="disciplineHistory" value="no"> No</label></fieldset>
-                    <div class="form-field" id="disciplineExplanationField" hidden><label for="disciplineExplanation">Please explain <span aria-hidden="true">*</span></label><textarea id="disciplineExplanation" rows="5"></textarea></div>
-                </section>
-
-                <section class="application-form-section" aria-labelledby="beauceronOwnershipHeading">
-                    <h3 id="beauceronOwnershipHeading">Beauceron Ownership</h3>
-                    <fieldset class="application-fieldset"><legend>Do you currently own a Beauceron? <span aria-hidden="true">*</span></legend><label><input type="radio" name="ownsBeauceron" value="yes"> Yes</label><label><input type="radio" name="ownsBeauceron" value="no"> No</label></fieldset>
-                </section>
-
-                <section class="application-form-section" aria-labelledby="applicationDogSportsHeading">
-                    <h3 id="applicationDogSportsHeading">Dog Sports &amp; Activities / Current Training</h3>
-                    <p>What dog sports, training, or activities do you currently participate in?</p>
-                    <p class="field-help">Select all that apply.</p>
-                    <div id="applicationDogSportsCheckboxGrid" class="checkbox-grid"></div>
+                <section class="application-form-section" aria-labelledby="additionalApplicationQuestionsHeading">
+                    <h3 id="additionalApplicationQuestionsHeading">Additional Application Questions</h3>
+                    <div id="applicationCustomQuestions"></div>
                 </section>
 
                 <section class="application-form-section" aria-labelledby="agreementsHeading">
@@ -123,7 +109,7 @@
                     <div class="application-document-placeholders"><button type="button" disabled>WBA Bylaws — Link Pending</button><button type="button" disabled>WBA Code of Ethics — Link Pending</button></div>
                     <label class="checkbox-option"><input type="checkbox" id="bylawsAccepted"> <span>I have read and agree to the WBA Bylaws. <span aria-hidden="true">*</span></span></label>
                     <label class="checkbox-option"><input type="checkbox" id="codeOfEthicsAccepted"> <span>I have read and agree to the WBA Code of Ethics. <span aria-hidden="true">*</span></span></label>
-                    <label class="checkbox-option"><input type="checkbox" id="communicationsConsent"> <span>I agree to accept electronic communication as the official means for the Working Beauceron Association, including email, phone, audio/video conferences, or other Board-approved methods. This will be used for meeting notifications, dues notices, minutes, newsletters, and announcements.</span></label>
+                    <label class="checkbox-option"><input type="checkbox" id="communicationsConsent"> <span>I agree to accept electronic communication as the official means for the Working Beauceron Association, including email, phone, audio/video conferences, or other Board-approved methods. This will be used for meeting notifications, dues notices, minutes, newsletters, and announcements. <span aria-hidden="true">*</span></span></label>
                 </section>
 
                 <section class="application-form-section application-save-section" aria-labelledby="applicationActionsHeading">
