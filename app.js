@@ -244,7 +244,7 @@ const normalizeApplicationQuestions = (questions) => {
             ? question.explanationLabel.trim()
             : "Please explain."
     }));
-    return normalized.length
+    return Array.isArray(questions)
         ? normalized.sort((left, right) => left.order - right.order)
         : FALLBACK_MEMBERSHIP_APPLICATION_QUESTIONS.map((question) => ({ ...question }));
 };
@@ -254,20 +254,134 @@ const getApplicationQuestionOptions = (question) =>
         ? DOG_SPORT_OPTIONS
         : question.options || [];
 
-const loadMembershipApplicationQuestions = async () => {
+const renderConfigurableApplicationQuestions = (container, questions, namePrefix = "custom-question") => {
+    container.replaceChildren();
+    questions.filter((question) => question.active).sort((left, right) => left.order - right.order)
+        .forEach((question) => {
+            const wrapper = document.createElement("div");
+            wrapper.className = "application-custom-question";
+            wrapper.dataset.questionId = question.id;
+            wrapper.dataset.questionType = question.type;
+            const labelText = document.createTextNode(question.label);
+            const requiredMarker = document.createElement("span");
+            requiredMarker.setAttribute("aria-hidden", "true");
+            requiredMarker.textContent = question.required ? " *" : "";
+            const appendChoice = (parent, option, inputType) => {
+                const label = document.createElement("label");
+                label.className = "checkbox-option";
+                const input = document.createElement("input");
+                input.type = inputType;
+                input.name = `${namePrefix}-${question.id}`;
+                input.value = option.id;
+                const optionLabel = document.createElement("span");
+                optionLabel.textContent = option.label;
+                label.append(input, optionLabel);
+                parent.appendChild(label);
+            };
+
+            if (["shortText", "longText"].includes(question.type)) {
+                const label = document.createElement("label");
+                const control = document.createElement(question.type === "longText" ? "textarea" : "input");
+                if (question.type === "shortText") control.type = "text";
+                if (question.type === "longText") control.rows = 6;
+                label.append(labelText, requiredMarker, control);
+                wrapper.appendChild(label);
+            } else {
+                const fieldset = document.createElement("fieldset");
+                fieldset.className = "application-fieldset";
+                const legend = document.createElement("legend");
+                legend.append(labelText, requiredMarker);
+                fieldset.appendChild(legend);
+                if (question.type === "yesNo") {
+                    appendChoice(fieldset, {id: "yes", label: "Yes"}, "radio");
+                    appendChoice(fieldset, {id: "no", label: "No"}, "radio");
+                } else if (question.type === "singleSelect") {
+                    getApplicationQuestionOptions(question).forEach((option) => appendChoice(fieldset, option, "radio"));
+                } else {
+                    const grid = document.createElement("div");
+                    grid.className = "checkbox-grid";
+                    getApplicationQuestionOptions(question).forEach((option) => appendChoice(grid, option, "checkbox"));
+                    fieldset.appendChild(grid);
+                }
+                wrapper.appendChild(fieldset);
+                if (question.type === "yesNo" && question.requiresExplanationWhen) {
+                    const explanationField = document.createElement("div");
+                    explanationField.className = "form-field custom-question-explanation";
+                    explanationField.hidden = true;
+                    const explanationLabel = document.createElement("label");
+                    explanationLabel.textContent = question.explanationLabel || "Please explain.";
+                    const explanation = document.createElement("textarea");
+                    explanation.rows = 5;
+                    explanation.dataset.questionExplanation = "true";
+                    explanationLabel.appendChild(explanation);
+                    explanationField.appendChild(explanationLabel);
+                    wrapper.appendChild(explanationField);
+                    wrapper.querySelectorAll('input[type="radio"]').forEach((radio) => {
+                        radio.addEventListener("change", () => {
+                            explanationField.hidden = wrapper.querySelector("input:checked")?.value !== "yes";
+                        });
+                    });
+                }
+            }
+            container.appendChild(wrapper);
+        });
+};
+
+const loadMembershipApplicationConfiguration = async () => {
     try {
-        const snapshot = await getDoc(
-            doc(db, "membershipApplicationConfig", "current")
-        );
-        return normalizeApplicationQuestions(
-            snapshot.exists() ? snapshot.data().questions : null
-        );
+        const currentSnapshot = await getDoc(doc(db, "membershipApplicationConfig", "current"));
+        if (!currentSnapshot.exists()) {
+            return {
+                questions: normalizeApplicationQuestions(),
+                version: 0,
+                usingDefaults: true,
+                configSource: "centralized-fallback"
+            };
+        }
+        const currentData = currentSnapshot.data();
+        if (Number.isInteger(currentData.currentVersion) && currentData.currentVersion > 0) {
+            const versionSnapshot = await getDoc(doc(
+                db,
+                "membershipApplicationConfig",
+                "current",
+                "versions",
+                String(currentData.currentVersion)
+            ));
+            if (versionSnapshot.exists()) {
+                return {
+                    questions: normalizeApplicationQuestions(versionSnapshot.data().questions),
+                    version: currentData.currentVersion,
+                    usingDefaults: false,
+                    configSource: "current-live-version"
+                };
+            }
+        }
+        if (Array.isArray(currentData.questions)) {
+            return {
+                questions: normalizeApplicationQuestions(currentData.questions),
+                version: 1,
+                usingDefaults: false,
+                legacy: true,
+                configSource: "legacy-config"
+            };
+        }
+        return {
+            questions: normalizeApplicationQuestions(),
+            version: 0,
+            usingDefaults: true,
+            configSource: "centralized-fallback"
+        };
     } catch (error) {
         console.warn(
             "Membership application question configuration could not be loaded; using fallback questions.",
             error
         );
-        return normalizeApplicationQuestions();
+        return {
+            questions: normalizeApplicationQuestions(),
+            version: 0,
+            usingDefaults: true,
+            configSource: "centralized-fallback"
+        };
     }
 };
 
@@ -920,6 +1034,7 @@ if (membershipApplicationPage) {
     let unmappedApplicationSubdivision = "";
     let membershipConfig = normalizeMembershipConfig();
     let applicationQuestions = normalizeApplicationQuestions();
+    let currentApplicationVersion = 0;
     const applicableMembershipYear = new Date().getFullYear();
     const getDraftMembershipYear = () =>
         currentApplication?.membershipYear || applicableMembershipYear;
@@ -947,85 +1062,8 @@ if (membershipApplicationPage) {
     const applicationCustomQuestions =
         document.getElementById("applicationCustomQuestions");
 
-    const appendChoice = (parent, question, option, inputType) => {
-        const label = document.createElement("label");
-        label.className = "checkbox-option";
-        const input = document.createElement("input");
-        input.type = inputType;
-        input.name = `custom-question-${question.id}`;
-        input.value = option.id;
-        const labelText = document.createElement("span");
-        labelText.textContent = option.label;
-        label.append(input, labelText);
-        parent.appendChild(label);
-    };
-
-    const renderApplicationQuestions = () => {
-        applicationCustomQuestions.replaceChildren();
-        applicationQuestions.filter((question) => question.active).forEach((question) => {
-            const wrapper = document.createElement("div");
-            wrapper.className = "application-custom-question";
-            wrapper.dataset.questionId = question.id;
-            wrapper.dataset.questionType = question.type;
-
-            const labelText = document.createTextNode(question.label);
-            const requiredMarker = document.createElement("span");
-            requiredMarker.setAttribute("aria-hidden", "true");
-            requiredMarker.textContent = question.required ? " *" : "";
-
-            if (question.type === "shortText" || question.type === "longText") {
-                const label = document.createElement("label");
-                const control = document.createElement(
-                    question.type === "longText" ? "textarea" : "input"
-                );
-                if (question.type === "shortText") control.type = "text";
-                if (question.type === "longText") control.rows = 6;
-                label.append(labelText, requiredMarker, control);
-                wrapper.appendChild(label);
-            } else {
-                const fieldset = document.createElement("fieldset");
-                fieldset.className = "application-fieldset";
-                const legend = document.createElement("legend");
-                legend.append(labelText, requiredMarker);
-                fieldset.appendChild(legend);
-                if (question.type === "yesNo") {
-                    appendChoice(fieldset, question, { id: "yes", label: "Yes" }, "radio");
-                    appendChoice(fieldset, question, { id: "no", label: "No" }, "radio");
-                } else if (question.type === "singleSelect") {
-                    getApplicationQuestionOptions(question).forEach((option) =>
-                        appendChoice(fieldset, question, option, "radio")
-                    );
-                } else {
-                    const grid = document.createElement("div");
-                    grid.className = "checkbox-grid";
-                    getApplicationQuestionOptions(question).forEach((option) =>
-                        appendChoice(grid, question, option, "checkbox")
-                    );
-                    fieldset.appendChild(grid);
-                }
-                wrapper.appendChild(fieldset);
-                if (question.type === "yesNo" && question.requiresExplanationWhen) {
-                    const explanationField = document.createElement("div");
-                    explanationField.className = "form-field custom-question-explanation";
-                    explanationField.hidden = true;
-                    const explanationLabel = document.createElement("label");
-                    explanationLabel.textContent = question.explanationLabel || "Please explain.";
-                    const explanation = document.createElement("textarea");
-                    explanation.rows = 5;
-                    explanation.dataset.questionExplanation = "true";
-                    explanationLabel.appendChild(explanation);
-                    explanationField.appendChild(explanationLabel);
-                    wrapper.appendChild(explanationField);
-                    wrapper.querySelectorAll('input[type="radio"]').forEach((radio) => {
-                        radio.addEventListener("change", () => {
-                            explanationField.hidden = wrapper.querySelector("input:checked")?.value !== "yes";
-                        });
-                    });
-                }
-            }
-            applicationCustomQuestions.appendChild(wrapper);
-        });
-    };
+    const renderApplicationQuestions = () =>
+        renderConfigurableApplicationQuestions(applicationCustomQuestions, applicationQuestions);
 
 
     const applicationFieldIds = {
@@ -1220,8 +1258,16 @@ if (membershipApplicationPage) {
     });
 
 
-    const collectCustomQuestionResponses = () =>
-        applicationQuestions.filter((question) => question.active).map((question) => {
+    const collectCustomQuestionResponses = () => {
+        const activeQuestionIds = new Set(
+            applicationQuestions.filter((question) => question.active).map((question) => question.id)
+        );
+        const preservedInactiveResponses = Array.isArray(currentApplication?.customQuestionResponses)
+            ? currentApplication.customQuestionResponses.filter(
+                (response) => !activeQuestionIds.has(response.questionId)
+            )
+            : [];
+        const activeResponses = applicationQuestions.filter((question) => question.active).map((question) => {
             const wrapper = Array.from(applicationCustomQuestions.children).find(
                 (element) => element.dataset.questionId === question.id
             );
@@ -1253,6 +1299,8 @@ if (membershipApplicationPage) {
             }
             return response;
         });
+        return [...preservedInactiveResponses, ...activeResponses];
+    };
 
 
     const collectApplicationData = () => {
@@ -1336,14 +1384,19 @@ if (membershipApplicationPage) {
         if (!data.communicationsConsent) {
             return "You must accept electronic communications before submitting.";
         }
+        const activeQuestionIds = new Set(
+            applicationQuestions.filter((question) => question.active).map((question) => question.id)
+        );
         const invalidRequiredQuestion = data.customQuestionResponses.find(
-            (response) => !hasValidRequiredQuestionAnswer(response)
+            (response) => activeQuestionIds.has(response.questionId) &&
+                !hasValidRequiredQuestionAnswer(response)
         );
         if (invalidRequiredQuestion) {
             return `Please answer: ${invalidRequiredQuestion.questionLabel}`;
         }
         const missingRequiredExplanation = data.customQuestionResponses.find(
-            (response) => response.requiresExplanationWhen === true &&
+            (response) => activeQuestionIds.has(response.questionId) &&
+                response.requiresExplanationWhen === true &&
                 response.answer === true &&
                 (!response.explanation || !response.explanation.trim())
         );
@@ -1351,6 +1404,7 @@ if (membershipApplicationPage) {
             return `Please provide an explanation for: ${missingRequiredExplanation.questionLabel}`;
         }
         const invalidOptionResponse = data.customQuestionResponses.find((response) => {
+            if (!activeQuestionIds.has(response.questionId)) return false;
             if (!["singleSelect", "multiSelect"].includes(response.questionType)) return false;
             const question = applicationQuestions.find(
                 (candidate) => candidate.id === response.questionId
@@ -1400,6 +1454,7 @@ if (membershipApplicationPage) {
             applicantUid: applicationUser.uid,
             ...collectApplicationData(),
             membershipYear: currentApplication?.membershipYear || applicableMembershipYear,
+            applicationVersion: currentApplicationVersion,
             applicationStatus,
             createdAt: currentApplication?.createdAt || now,
             updatedAt: now,
@@ -1876,22 +1931,36 @@ if (membershipApplicationPage) {
                         applicationUser.uid
                     );
 
-                const [applicationSnapshot, userSnapshot, memberProfilesSnapshot, loadedMembershipConfig, loadedApplicationQuestions] =
+                const [applicationSnapshot, userSnapshot, memberProfilesSnapshot, loadedMembershipConfig, loadedApplicationConfiguration] =
                     await Promise.all([
                         getDoc(applicationRef),
                         getDoc(doc(db, "users", applicationUser.uid)),
                         getDocs(collection(db, "memberProfiles")),
                         loadMembershipConfig(),
-                        loadMembershipApplicationQuestions()
+                        loadMembershipApplicationConfiguration()
                     ]);
 
                 membershipConfig = loadedMembershipConfig;
-
-                currentApplication = applicationSnapshot.exists()
+                const applicationExists = applicationSnapshot.exists();
+                currentApplication = applicationExists
                     ? applicationSnapshot.data()
                     : null;
+                const applicationStatus = currentApplication?.applicationStatus || null;
+                const frozenApplicationStatuses = new Set([
+                    "Submitted",
+                    "Awaiting Board Decision",
+                    "Approved",
+                    "Declined"
+                ]);
+                const usesFrozenApplicationSnapshot = frozenApplicationStatuses.has(applicationStatus);
+                const savedApplicationVersion = Number.isInteger(currentApplication?.applicationVersion)
+                    ? currentApplication.applicationVersion
+                    : null;
+                currentApplicationVersion = usesFrozenApplicationSnapshot && savedApplicationVersion !== null
+                    ? savedApplicationVersion
+                    : loadedApplicationConfiguration.version;
 
-                applicationQuestions = currentApplication && !["Draft", "Needs Revision"].includes(currentApplication.applicationStatus)
+                applicationQuestions = usesFrozenApplicationSnapshot
                     ? getApplicationQuestionResponses(currentApplication).map((response, index) => ({
                         id: response.questionId,
                         label: response.questionLabel,
@@ -1905,7 +1974,17 @@ if (membershipApplicationPage) {
                             ? "DOG_SPORT_OPTIONS"
                             : undefined
                     }))
-                    : loadedApplicationQuestions;
+                    : loadedApplicationConfiguration.questions;
+                console.log("[Application Config Selection Debug]", {
+                    applicationExists,
+                    applicationStatus,
+                    savedApplicationVersion,
+                    currentLiveVersion: loadedApplicationConfiguration.version,
+                    selectedVersion: currentApplicationVersion,
+                    configSource: usesFrozenApplicationSnapshot
+                        ? "saved-application-snapshot"
+                        : loadedApplicationConfiguration.configSource
+                });
                 renderApplicationQuestions();
 
                 const userData = userSnapshot.exists()
@@ -1924,25 +2003,25 @@ if (membershipApplicationPage) {
                     applicationUser
                 );
 
-                const applicationStatus =
+                const displayedApplicationStatus =
                     currentApplication?.applicationStatus || "Draft";
 
                 document.getElementById("applicationStatus").textContent =
-                    applicationStatus;
+                    displayedApplicationStatus;
 
-                const isRevision = applicationStatus === "Needs Revision";
+                const isRevision = displayedApplicationStatus === "Needs Revision";
                 document.getElementById("applicationRevisionBanner").hidden = !isRevision;
                 document.getElementById("applicationRevisionMessage").textContent =
                     isRevision
                         ? currentApplication.revisionRequestMessage || "Please review your application and provide the requested information."
                         : "";
 
-                if (applicationStatus !== "Draft" && !isRevision) {
+                if (displayedApplicationStatus !== "Draft" && !isRevision) {
                     setApplicationReadOnly(true);
                     applicationFormMessage.textContent =
-                        applicationStatus === "Submitted"
+                        displayedApplicationStatus === "Submitted"
                             ? "Your application has been submitted for review."
-                            : `Your application status is ${applicationStatus}. This application is read-only.`;
+                            : `Your application status is ${displayedApplicationStatus}. This application is read-only.`;
                 }
 
             } catch (error) {
@@ -2802,6 +2881,923 @@ if (memberDashboard) {
 
 
 // ------------------------------------
+// Admin Settings
+// ------------------------------------
+
+const guardAdminSettingsPage = (container, accessMessage) => {
+    onAuthStateChanged(auth, async (authenticatedUser) => {
+        if (!authenticatedUser?.emailVerified) {
+            window.location.replace("login.html");
+            return;
+        }
+        try {
+            const authorization = await getAdminAuthorization(authenticatedUser);
+            if (authorization.active !== true) {
+                window.location.replace("dashboard.html");
+                return;
+            }
+            container.hidden = false;
+            accessMessage.textContent = "";
+        } catch (error) {
+            console.error("Admin Settings authorization could not be verified.", error);
+            window.location.replace("dashboard.html");
+        }
+    });
+};
+
+const adminSettings = document.getElementById("adminSettings");
+
+if (adminSettings) {
+    guardAdminSettingsPage(
+        adminSettings,
+        document.getElementById("adminSettingsAccessMessage")
+    );
+}
+
+const applicationQuestionsManager = document.getElementById("applicationQuestionsManager");
+
+if (applicationQuestionsManager) {
+    const accessMessage = document.getElementById("applicationQuestionsAccessMessage");
+    const sourceMessage = document.getElementById("applicationQuestionsSourceMessage");
+    const questionList = document.getElementById("applicationQuestionList");
+    const managerMessage = document.getElementById("applicationQuestionsMessage");
+    const preview = document.getElementById("applicationQuestionsPreview");
+    const previewContent = document.getElementById("applicationQuestionsPreviewContent");
+    const deleteDialog = document.getElementById("deleteApplicationQuestionDialog");
+    const deleteQuestionName = document.getElementById("deleteApplicationQuestionName");
+    const versionPlan = document.getElementById("applicationQuestionsVersionPlan");
+    const dirtyState = document.getElementById("applicationQuestionsDirtyState");
+    const saveQuestionsButton = document.getElementById("saveApplicationQuestionsButton");
+    const createVersionOneButton = document.getElementById("createApplicationVersionOneButton");
+    const versionHistoryList = document.getElementById("applicationVersionHistoryList");
+    const versionDetailDialog = document.getElementById("applicationVersionDetailDialog");
+    const versionDetailHeading = document.getElementById("applicationVersionDetailHeading");
+    const versionDetailMetadata = document.getElementById("applicationVersionDetailMetadata");
+    const versionQuestionList = document.getElementById("applicationVersionQuestionList");
+    const restoreVersionButton = document.getElementById("restoreApplicationVersionButton");
+    const publishDialog = document.getElementById("publishApplicationVersionDialog");
+    const publishDialogHeading = document.getElementById("publishApplicationVersionHeading");
+    const publishDialogMessage = document.getElementById("publishApplicationVersionMessage");
+    const confirmPublishButton = document.getElementById("confirmPublishApplicationVersionButton");
+    const typeLabels = {
+        shortText: "Short Text",
+        longText: "Long Text",
+        yesNo: "Yes / No",
+        singleSelect: "Single Select",
+        multiSelect: "Multiple Select"
+    };
+    let settingsAdmin = null;
+    let settingsAdminAuthorization = null;
+    let questions = [];
+    let usingDefaults = false;
+    let pendingDeleteQuestion = null;
+    let previewMembershipConfig = normalizeMembershipConfig();
+    let currentVersion = 0;
+    let liveQuestionsSnapshot = [];
+    let publishedQuestionIds = new Set();
+    let configurationVersions = [];
+    let selectedHistoricalVersion = null;
+    let publishConfirmationResolver = null;
+    let legacyConfigurationData = null;
+
+    const createLoadDebug = (authorization = {}) => ({
+        viewerAdmin: authorization.active === true,
+        viewerSuperAdmin: authorization.superAdmin === true,
+        currentDocumentExists: false,
+        currentVersion: null,
+        legacyQuestionsPresent: false,
+        migrationNeeded: false,
+        migrationAttempted: false,
+        migrationSucceeded: false,
+        versionDocumentPath: null,
+        versionDocumentExists: false,
+        historicalListAttempted: false,
+        failureStage: null
+    });
+
+    const requestPublishConfirmation = (heading, message, actionLabel) => new Promise((resolve) => {
+        publishDialogHeading.textContent = heading;
+        publishDialogMessage.textContent = message;
+        confirmPublishButton.textContent = actionLabel;
+        publishConfirmationResolver = resolve;
+        publishDialog.showModal();
+    });
+
+    const serializeQuestionsForPublish = (source = questions) => source.map((question) => ({
+        id: question.id,
+        label: question.label.trim(),
+        type: question.type,
+        required: question.required,
+        active: question.active,
+        order: question.order,
+        ...(question.optionSource ? {optionSource: question.optionSource} : {}),
+        ...(["singleSelect", "multiSelect"].includes(question.type) && !question.optionSource
+            ? {options: question.options.map((option) => ({id: option.id, label: option.label}))}
+            : {}),
+        ...(question.type === "yesNo" && question.requiresExplanationWhen
+            ? {requiresExplanationWhen: true, explanationLabel: question.explanationLabel.trim()}
+            : {})
+    }));
+
+    const hasUnsavedChanges = () =>
+        currentVersion === 0 ||
+        JSON.stringify(serializeQuestionsForPublish()) !== JSON.stringify(liveQuestionsSnapshot);
+
+    const updateVersionState = () => {
+        const nextVersion = currentVersion + 1;
+        const dirty = hasUnsavedChanges();
+        versionPlan.textContent = currentVersion > 0
+            ? `Current Live Version: ${currentVersion} · Unsaved changes will create Version ${nextVersion}.`
+            : `Default Configuration — Not Yet Versioned · First publish will create Version ${nextVersion}.`;
+        dirtyState.textContent = currentVersion === 0
+            ? `The default configuration is not yet published — saving will create Version ${nextVersion}.`
+            : dirty
+                ? `Unsaved changes — saving will publish Version ${nextVersion}.`
+                : "No unsaved changes.";
+        saveQuestionsButton.textContent = `Save & Publish Version ${nextVersion}`;
+        saveQuestionsButton.disabled = !dirty;
+        document.getElementById("previewApplicationQuestionsButton").textContent = `Preview Proposed Version ${nextVersion}`;
+    };
+
+    const slugifyQuestionId = (label) => String(label || "")
+        .trim()
+        .toLocaleLowerCase()
+        .normalize("NFKD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/[^a-z0-9]+/g, "-")
+        .replace(/^-+|-+$/g, "")
+        .slice(0, 64) || "new-question";
+
+    const createUniqueQuestionId = (label, currentQuestion) => {
+        const baseId = slugifyQuestionId(label);
+        const usedIds = new Set(
+            questions.filter((question) => question !== currentQuestion).map((question) => question.id)
+        );
+        publishedQuestionIds.forEach((questionId) => usedIds.add(questionId));
+        let candidate = baseId;
+        let suffix = 2;
+        while (usedIds.has(candidate)) {
+            candidate = `${baseId}-${suffix}`;
+            suffix += 1;
+        }
+        return candidate;
+    };
+
+    const serializeOptions = (options = []) => options
+        .map((option) => `${option.id} | ${option.label}`)
+        .join("\n");
+
+    const parseOptions = (value) => String(value || "")
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean)
+        .map((line) => {
+            const separatorIndex = line.indexOf("|");
+            return separatorIndex < 0
+                ? { id: line.trim(), label: "" }
+                : {
+                    id: line.slice(0, separatorIndex).trim(),
+                    label: line.slice(separatorIndex + 1).trim()
+                };
+        });
+
+    const appendLabeledControl = (parent, labelText, control) => {
+        const field = document.createElement("div");
+        field.className = "form-field";
+        const label = document.createElement("label");
+        label.textContent = labelText;
+        label.appendChild(control);
+        field.appendChild(label);
+        parent.appendChild(field);
+        return field;
+    };
+
+    const buildBooleanSelect = (value) => {
+        const select = document.createElement("select");
+        [{value: "true", label: "Yes"}, {value: "false", label: "No"}]
+            .forEach((optionData) => {
+                const option = document.createElement("option");
+                option.value = optionData.value;
+                option.textContent = optionData.label;
+                option.selected = String(value) === optionData.value;
+                select.appendChild(option);
+            });
+        return select;
+    };
+
+    const renderQuestionManager = () => {
+        questionList.replaceChildren();
+        questions.sort((left, right) => left.order - right.order).forEach((question) => {
+            const card = document.createElement("article");
+            card.className = question.active
+                ? "question-manager-card"
+                : "question-manager-card question-manager-card-inactive";
+            card.dataset.questionId = question.id;
+
+            const heading = document.createElement("div");
+            heading.className = "question-manager-heading";
+            const title = document.createElement("h3");
+            title.textContent = question.label || "New Question";
+            const status = document.createElement("span");
+            status.className = question.active ? "question-status active" : "question-status inactive";
+            status.textContent = question.active ? "Active" : "Inactive";
+            heading.append(title, status);
+            card.appendChild(heading);
+
+            const grid = document.createElement("div");
+            grid.className = "question-manager-grid";
+            const labelInput = document.createElement("input");
+            labelInput.type = "text";
+            labelInput.value = question.label;
+            labelInput.dataset.questionField = "label";
+            appendLabeledControl(grid, "Question Label", labelInput);
+
+            const idInput = document.createElement("input");
+            idInput.type = "text";
+            idInput.value = question.id;
+            idInput.readOnly = question.persisted === true;
+            idInput.dataset.questionField = "id";
+            const idField = appendLabeledControl(grid, "Question ID", idInput);
+            const idHelp = document.createElement("p");
+            idHelp.className = "field-help";
+            idHelp.textContent = question.persisted
+                ? "Question IDs become permanent after the question is first published so historical application responses remain linked correctly."
+                : "Edit this machine ID before first publish. Use lowercase letters, numbers, and hyphens.";
+            idField.appendChild(idHelp);
+
+            const typeSelect = document.createElement("select");
+            Object.entries(typeLabels).forEach(([value, label]) => {
+                const option = document.createElement("option");
+                option.value = value;
+                option.textContent = label;
+                option.selected = value === question.type;
+                typeSelect.appendChild(option);
+            });
+            typeSelect.disabled = question.persisted === true;
+            typeSelect.dataset.questionField = "type";
+            appendLabeledControl(grid, "Question Type", typeSelect);
+
+            const requiredSelect = buildBooleanSelect(question.required);
+            requiredSelect.dataset.questionField = "required";
+            appendLabeledControl(grid, "Required", requiredSelect);
+
+            const activeSelect = buildBooleanSelect(question.active);
+            activeSelect.dataset.questionField = "active";
+            appendLabeledControl(grid, "Active", activeSelect);
+
+            const orderInput = document.createElement("input");
+            orderInput.type = "number";
+            orderInput.step = "1";
+            orderInput.value = question.order;
+            orderInput.dataset.questionField = "order";
+            appendLabeledControl(grid, "Order", orderInput);
+            card.appendChild(grid);
+
+            const optionsPanel = document.createElement("div");
+            optionsPanel.className = "question-options-panel";
+            const usesOptions = ["singleSelect", "multiSelect"].includes(question.type);
+            optionsPanel.hidden = !usesOptions;
+            if (question.optionSource === "DOG_SPORT_OPTIONS") {
+                const sourceField = document.createElement("div");
+                sourceField.className = "system-options-source";
+                const sourceLabel = document.createElement("strong");
+                sourceLabel.textContent = "Options Source:";
+                const sourceValue = document.createElement("span");
+                sourceValue.textContent = "Dog Sports & Activities List (system managed)";
+                sourceField.append(sourceLabel, sourceValue);
+                optionsPanel.appendChild(sourceField);
+            } else {
+                const sourceNote = document.createElement("p");
+                sourceNote.className = "profile-muted";
+                sourceNote.textContent = "Enter one option per line as: stable-value | Display Label";
+                optionsPanel.appendChild(sourceNote);
+                const optionsInput = document.createElement("textarea");
+                optionsInput.rows = 5;
+                optionsInput.value = serializeOptions(question.options);
+                optionsInput.dataset.questionField = "options";
+                appendLabeledControl(optionsPanel, "Options", optionsInput);
+            }
+            card.appendChild(optionsPanel);
+
+            const explanationPanel = document.createElement("div");
+            explanationPanel.className = "question-explanation-panel question-manager-grid";
+            explanationPanel.hidden = question.type !== "yesNo";
+            const explanationSelect = buildBooleanSelect(question.requiresExplanationWhen === true);
+            explanationSelect.dataset.questionField = "requiresExplanationWhen";
+            appendLabeledControl(explanationPanel, "Require explanation when Yes", explanationSelect);
+            const explanationLabel = document.createElement("input");
+            explanationLabel.type = "text";
+            explanationLabel.value = question.explanationLabel || "Please explain.";
+            explanationLabel.dataset.questionField = "explanationLabel";
+            const explanationLabelField = appendLabeledControl(explanationPanel, "Explanation Label", explanationLabel);
+            explanationLabelField.hidden = question.requiresExplanationWhen !== true;
+            card.appendChild(explanationPanel);
+
+            const questionActions = document.createElement("div");
+            questionActions.className = "question-manager-actions";
+            const actionExplanation = document.createElement("p");
+            actionExplanation.className = "profile-muted";
+            actionExplanation.textContent = "Deactivate hides this question but keeps it available to reactivate. Delete removes it from the current configuration after you save.";
+            const deleteButton = document.createElement("button");
+            deleteButton.type = "button";
+            deleteButton.className = "button-danger";
+            deleteButton.textContent = "Delete Question";
+            deleteButton.addEventListener("click", () => {
+                pendingDeleteQuestion = question;
+                deleteQuestionName.textContent = question.label || question.id;
+                deleteDialog.showModal();
+            });
+            const actionButtons = document.createElement("div");
+            actionButtons.className = "question-manager-action-buttons";
+            const activationButton = document.createElement("button");
+            activationButton.type = "button";
+            activationButton.className = "button-secondary";
+            activationButton.textContent = question.active ? "Deactivate" : "Reactivate";
+            activationButton.addEventListener("click", () => {
+                question.active = !question.active;
+                activeSelect.value = String(question.active);
+                status.textContent = question.active ? "Active" : "Inactive";
+                status.className = question.active ? "question-status active" : "question-status inactive";
+                card.classList.toggle("question-manager-card-inactive", !question.active);
+                activationButton.textContent = question.active ? "Deactivate" : "Reactivate";
+                managerMessage.textContent = question.active
+                    ? `“${question.label}” was reactivated. Select Save Application Questions to publish this change.`
+                    : `“${question.label}” was deactivated. Select Save Application Questions to publish this change.`;
+                updateVersionState();
+            });
+            actionButtons.append(activationButton, deleteButton);
+            questionActions.append(actionExplanation, actionButtons);
+            card.appendChild(questionActions);
+
+            const syncQuestionFromCard = () => {
+                question.label = labelInput.value;
+                if (!question.persisted) question.id = idInput.value.trim();
+                question.type = typeSelect.value;
+                question.required = requiredSelect.value === "true";
+                question.active = activeSelect.value === "true";
+                question.order = Number(orderInput.value);
+                question.requiresExplanationWhen = question.type === "yesNo" && explanationSelect.value === "true";
+                question.explanationLabel = explanationLabel.value;
+                question.options = question.optionSource === "DOG_SPORT_OPTIONS"
+                    ? []
+                    : parseOptions(card.querySelector('[data-question-field="options"]')?.value);
+                title.textContent = question.label || "New Question";
+                status.textContent = question.active ? "Active" : "Inactive";
+                status.className = question.active ? "question-status active" : "question-status inactive";
+                card.classList.toggle("question-manager-card-inactive", !question.active);
+                activationButton.textContent = question.active ? "Deactivate" : "Reactivate";
+                optionsPanel.hidden = !["singleSelect", "multiSelect"].includes(question.type);
+                explanationPanel.hidden = question.type !== "yesNo";
+                explanationLabelField.hidden = !question.requiresExplanationWhen;
+                updateVersionState();
+            };
+            labelInput.addEventListener("input", () => {
+                if (!question.persisted && !question.idManuallyEdited) {
+                    idInput.value = createUniqueQuestionId(labelInput.value, question);
+                }
+            });
+            idInput.addEventListener("input", () => {
+                if (!question.persisted) question.idManuallyEdited = true;
+            });
+            card.querySelectorAll("input, select, textarea").forEach((control) => {
+                control.addEventListener("input", syncQuestionFromCard);
+                control.addEventListener("change", syncQuestionFromCard);
+            });
+            questionList.appendChild(card);
+        });
+        updateVersionState();
+    };
+
+    const validateQuestions = () => {
+        const errors = [];
+        const ids = new Set();
+        questions.forEach((question, index) => {
+            const name = question.label.trim() || `Question ${index + 1}`;
+            if (!question.id || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(question.id)) errors.push(`${name} needs a valid stable ID.`);
+            if (ids.has(question.id)) errors.push(`Question ID “${question.id}” is duplicated.`);
+            if (!question.persisted && publishedQuestionIds.has(question.id)) errors.push(`Question ID “${question.id}” was used in a published version and cannot be reused for a new question.`);
+            ids.add(question.id);
+            if (!question.label.trim()) errors.push(`Question ${index + 1} needs a label.`);
+            if (!APPLICATION_QUESTION_TYPES.has(question.type)) errors.push(`${name} has an unsupported type.`);
+            if (typeof question.required !== "boolean" || typeof question.active !== "boolean") errors.push(`${name} has an invalid Required or Active value.`);
+            if (!Number.isFinite(question.order) || !Number.isInteger(question.order) || question.order < 0) errors.push(`${name} needs a non-negative whole-number order.`);
+            if (question.optionSource && question.optionSource !== "DOG_SPORT_OPTIONS") errors.push(`${name} uses an unknown options source.`);
+            if (question.optionSource === "DOG_SPORT_OPTIONS" && question.type !== "multiSelect") errors.push(`${name} must remain a Multiple Select question.`);
+            if (["singleSelect", "multiSelect"].includes(question.type) && !question.optionSource) {
+                const optionIds = new Set();
+                if (!question.options.length) errors.push(`${name} needs at least one option.`);
+                question.options.forEach((option) => {
+                    if (!option.id || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(option.id) || !option.label) errors.push(`${name} has an invalid option; use “stable-value | Display Label”.`);
+                    if (optionIds.has(option.id)) errors.push(`${name} has duplicate option value “${option.id}”.`);
+                    optionIds.add(option.id);
+                });
+            }
+            if (question.requiresExplanationWhen && (question.type !== "yesNo" || !question.explanationLabel.trim())) errors.push(`${name} needs a valid Yes/No explanation label.`);
+        });
+        return [...new Set(errors)];
+    };
+
+    const createPreviewSection = (title) => {
+        const section = document.createElement("section");
+        section.className = "application-form-section";
+        const heading = document.createElement("h3");
+        heading.textContent = title;
+        section.appendChild(heading);
+        previewContent.appendChild(section);
+        return section;
+    };
+
+    const appendPreviewField = (parent, labelText, type = "text", required = false) => {
+        const field = document.createElement("div");
+        field.className = "form-field";
+        const label = document.createElement("label");
+        label.textContent = `${labelText}${required ? " *" : ""}`;
+        const control = type === "select" ? document.createElement("select") : document.createElement("input");
+        if (type !== "select") control.type = type;
+        control.disabled = true;
+        if (type === "select") {
+            const option = document.createElement("option");
+            option.textContent = `Select ${labelText}`;
+            control.appendChild(option);
+        }
+        label.appendChild(control);
+        field.appendChild(label);
+        parent.appendChild(field);
+        return field;
+    };
+
+    const renderPreview = (
+        previewQuestions = questions,
+        title = `Preview — Proposed Version ${currentVersion + 1}`,
+        historical = false
+    ) => {
+        document.getElementById("applicationQuestionsPreviewHeading").textContent = title;
+        document.getElementById("applicationPreviewNotice").textContent = historical
+            ? "Core application fields are system managed. This preview uses the immutable question snapshot from the selected published version."
+            : "Core questions like name, address, and birthdate will display first followed by the below questions.";
+        previewContent.replaceChildren();
+        previewContent.className = "application-preview-content profile-form";
+
+        const personal = createPreviewSection("Personal Information");
+        const personalRowOne = document.createElement("div");
+        personalRowOne.className = "form-row form-row-two-columns";
+        appendPreviewField(personalRowOne, "First Name", "text", true);
+        appendPreviewField(personalRowOne, "Last Name", "text", true);
+        personal.appendChild(personalRowOne);
+        const personalRowTwo = document.createElement("div");
+        personalRowTwo.className = "form-row form-row-two-columns";
+        appendPreviewField(personalRowTwo, "Preferred Name");
+        appendPreviewField(personalRowTwo, "Email", "email", true);
+        personal.appendChild(personalRowTwo);
+        appendPreviewField(personal, "Phone", "tel", true);
+        appendPreviewField(personal, "Date of Birth", "date");
+
+        const address = createPreviewSection("Address");
+        const addressRow = document.createElement("div");
+        addressRow.className = "form-row form-row-two-columns";
+        appendPreviewField(addressRow, "Country", "select", true);
+        appendPreviewField(addressRow, "State / Province / Region", "select");
+        address.appendChild(addressRow);
+        appendPreviewField(address, "Street Address", "text", true);
+        const cityRow = document.createElement("div");
+        cityRow.className = "form-row form-row-two-columns";
+        appendPreviewField(cityRow, "City", "text", true);
+        appendPreviewField(cityRow, "ZIP / Postal Code", "text", true);
+        address.appendChild(cityRow);
+
+        const membership = createPreviewSection("Membership Type");
+        const membershipCards = document.createElement("div");
+        membershipCards.className = "membership-type-cards";
+        Object.entries(previewMembershipConfig).forEach(([membershipType, configuration]) => {
+            if (!configuration.active) return;
+            const card = document.createElement("label");
+            card.className = "membership-type-card";
+            const radio = document.createElement("input");
+            radio.type = "radio";
+            radio.name = "preview-membership-type";
+            const content = document.createElement("span");
+            const name = document.createElement("strong");
+            name.textContent = configuration.displayName || membershipType;
+            content.appendChild(name);
+            if (typeof configuration.annualDues === "number") {
+                const price = document.createElement("span");
+                price.className = "membership-type-price";
+                price.textContent = `$${configuration.annualDues.toLocaleString("en-US")}/year`;
+                content.appendChild(price);
+            }
+            const description = document.createElement("span");
+            description.textContent = configuration.description || "";
+            content.appendChild(description);
+            card.append(radio, content);
+            membershipCards.appendChild(card);
+        });
+        membership.appendChild(membershipCards);
+
+        const sponsor = createPreviewSection("Sponsor");
+        const sponsorHelp = document.createElement("p");
+        sponsorHelp.className = "field-help";
+        sponsorHelp.textContent = "Select an eligible Active WBA member, or request help finding a sponsor.";
+        sponsor.appendChild(sponsorHelp);
+        const sponsorSearch = appendPreviewField(sponsor, "Search Current WBA Members", "search");
+        sponsorSearch.querySelector("input").placeholder = "Search by member name";
+        const sponsorRequest = document.createElement("label");
+        sponsorRequest.className = "checkbox-option";
+        const sponsorCheckbox = document.createElement("input");
+        sponsorCheckbox.type = "checkbox";
+        sponsorCheckbox.disabled = true;
+        sponsorRequest.append(sponsorCheckbox, document.createTextNode(" I need help finding a sponsor."));
+        sponsor.appendChild(sponsorRequest);
+
+        const configurable = createPreviewSection("Additional Application Questions");
+        const configurableQuestions = document.createElement("div");
+        renderConfigurableApplicationQuestions(configurableQuestions, previewQuestions, "preview-question");
+        configurable.appendChild(configurableQuestions);
+
+        const agreements = createPreviewSection("Agreements");
+        [
+            "I have read and agree to the WBA Bylaws. *",
+            "I have read and agree to the WBA Code of Ethics. *",
+            "I agree to accept electronic communication as the official means for the Working Beauceron Association. *"
+        ].forEach((text) => {
+            const label = document.createElement("label");
+            label.className = "checkbox-option";
+            const checkbox = document.createElement("input");
+            checkbox.type = "checkbox";
+            checkbox.disabled = true;
+            label.append(checkbox, document.createTextNode(` ${text}`));
+            agreements.appendChild(label);
+        });
+
+        preview.showModal();
+    };
+
+    const formatVersionDate = (value) => {
+        const date = value?.toDate ? value.toDate() : new Date(value);
+        return Number.isNaN(date.getTime())
+            ? "Date unavailable"
+            : new Intl.DateTimeFormat("en-US", {year: "numeric", month: "long", day: "numeric"}).format(date);
+    };
+
+    const resolveVersionCreatorName = async (uid) => {
+        if (!uid) return "Admin";
+        try {
+            const snapshot = await getDoc(doc(db, "users", uid));
+            if (!snapshot.exists()) return "Admin";
+            const data = snapshot.data();
+            return `${data.preferredName || data.firstName || ""} ${data.lastName || ""}`.trim() || "Admin";
+        } catch (error) {
+            return "Admin";
+        }
+    };
+
+    const openVersionDetail = (versionData) => {
+        selectedHistoricalVersion = versionData;
+        versionDetailHeading.textContent = `Version ${versionData.version}${versionData.version === currentVersion ? " — Current" : ""}`;
+        versionDetailMetadata.textContent = `${formatVersionDate(versionData.createdAt)} — ${versionData.creatorName || "Admin"}${Number.isInteger(versionData.restoredFromVersion) ? ` · Restored from Version ${versionData.restoredFromVersion}` : ""}`;
+        restoreVersionButton.hidden = versionData.version === currentVersion;
+        restoreVersionButton.textContent = `Restore Version ${versionData.version}`;
+        versionQuestionList.replaceChildren();
+        normalizeApplicationQuestions(versionData.questions).forEach((question) => {
+            const card = document.createElement("article");
+            card.className = question.active ? "version-question-card" : "version-question-card question-manager-card-inactive";
+            const heading = document.createElement("h3");
+            heading.textContent = question.label;
+            const metadata = document.createElement("p");
+            metadata.className = "profile-muted";
+            metadata.textContent = `${typeLabels[question.type]} · ${question.required ? "Required" : "Optional"} · ${question.active ? "Active" : "Inactive"} · Order ${question.order} · ID: ${question.id}`;
+            card.append(heading, metadata);
+            if (["singleSelect", "multiSelect"].includes(question.type)) {
+                const options = document.createElement("p");
+                options.textContent = question.optionSource === "DOG_SPORT_OPTIONS"
+                    ? "Options Source: Dog Sports & Activities List (system managed)"
+                    : `Options: ${getApplicationQuestionOptions(question).map((option) => `${option.label} (${option.id})`).join(", ")}`;
+                card.appendChild(options);
+            }
+            if (question.requiresExplanationWhen) {
+                const explanation = document.createElement("p");
+                explanation.textContent = `Explanation when Yes: ${question.explanationLabel}`;
+                card.appendChild(explanation);
+            }
+            versionQuestionList.appendChild(card);
+        });
+        versionDetailDialog.showModal();
+    };
+
+    const loadVersionHistory = async () => {
+        const snapshot = await getDocs(collection(db, "membershipApplicationConfig", "current", "versions"));
+        configurationVersions = await Promise.all(snapshot.docs.map(async (versionSnapshot) => {
+            const data = versionSnapshot.data();
+            return {...data, creatorName: await resolveVersionCreatorName(data.createdBy)};
+        }));
+        configurationVersions.sort((left, right) => right.version - left.version);
+        publishedQuestionIds = new Set(configurationVersions.flatMap((versionData) =>
+            Array.isArray(versionData.questions) ? versionData.questions.map((question) => question.id) : []
+        ));
+        versionHistoryList.replaceChildren();
+        configurationVersions.forEach((versionData) => {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = "version-history-item";
+            const title = document.createElement("strong");
+            title.textContent = `Version ${versionData.version}${versionData.version === currentVersion ? " — Current" : ""}`;
+            const metadata = document.createElement("span");
+            metadata.textContent = `${formatVersionDate(versionData.createdAt)} — ${versionData.creatorName || "Admin"}`;
+            button.append(title, metadata);
+            button.addEventListener("click", () => openVersionDetail(versionData));
+            versionHistoryList.appendChild(button);
+        });
+    };
+
+    const publishConfiguration = async (sourceQuestions, restoredFromVersion = null, skipConfirmation = false) => {
+        const nextVersion = currentVersion + 1;
+        const savedQuestions = serializeQuestionsForPublish(sourceQuestions);
+        if (!skipConfirmation) {
+            const confirmed = await requestPublishConfirmation(
+                `Publish Membership Application Version ${nextVersion}?`,
+                `You are about to publish Membership Application Version ${nextVersion}. These changes will affect new and editable applications. Previously submitted applications will retain the version and question snapshots they were submitted with.`,
+                `Publish Version ${nextVersion}`
+            );
+            if (!confirmed) return false;
+        }
+        saveQuestionsButton.disabled = true;
+        managerMessage.textContent = `Publishing Version ${nextVersion}...`;
+        const now = new Date().toISOString();
+        const versionData = {
+            version: nextVersion,
+            questions: savedQuestions,
+            createdAt: now,
+            createdBy: settingsAdmin.uid,
+            ...(Number.isInteger(restoredFromVersion) ? {restoredFromVersion} : {})
+        };
+        try {
+            const batch = writeBatch(db);
+            batch.set(doc(db, "membershipApplicationConfig", "current", "versions", String(nextVersion)), versionData);
+            batch.set(doc(db, "membershipApplicationConfig", "current"), {
+                currentVersion: nextVersion,
+                updatedAt: now,
+                updatedBy: settingsAdmin.uid
+            });
+            await batch.commit();
+            currentVersion = nextVersion;
+            liveQuestionsSnapshot = savedQuestions;
+            questions = normalizeApplicationQuestions(savedQuestions).map((question) => ({...question, persisted: true}));
+            usingDefaults = false;
+            sourceMessage.textContent = "Core questions are not editable, if you need something changed please contact the app developer.";
+            await loadVersionHistory();
+            renderQuestionManager();
+            managerMessage.textContent = `Version ${currentVersion} is now live.`;
+            return true;
+        } catch (error) {
+            console.error("Application question version could not be published.", error);
+            managerMessage.textContent = "We couldn't publish the new application version. No live configuration changes were applied.";
+            updateVersionState();
+            return false;
+        }
+    };
+
+    const migrateLegacyConfiguration = async (currentData) => {
+        const legacyQuestions = normalizeApplicationQuestions(currentData.questions);
+        const createdAt = currentData.updatedAt || new Date().toISOString();
+        const createdBy = settingsAdmin.uid;
+        const versionData = {version: 1, questions: serializeQuestionsForPublish(legacyQuestions), createdAt, createdBy};
+        const batch = writeBatch(db);
+        batch.set(doc(db, "membershipApplicationConfig", "current", "versions", "1"), versionData);
+        batch.set(doc(db, "membershipApplicationConfig", "current"), {currentVersion: 1, updatedAt: createdAt, updatedBy: createdBy});
+        await batch.commit();
+        return versionData;
+    };
+
+    createVersionOneButton.addEventListener("click", async () => {
+        if (!legacyConfigurationData) return;
+        const loadDebug = createLoadDebug(settingsAdminAuthorization || {});
+        loadDebug.currentDocumentExists = true;
+        loadDebug.currentVersion = 1;
+        loadDebug.legacyQuestionsPresent = true;
+        loadDebug.migrationNeeded = true;
+        loadDebug.migrationAttempted = true;
+        loadDebug.versionDocumentPath = "membershipApplicationConfig/current/versions/1";
+        loadDebug.failureStage = "migrate-legacy-version-1";
+        createVersionOneButton.disabled = true;
+        managerMessage.textContent = "Creating Version 1...";
+        try {
+            await migrateLegacyConfiguration(legacyConfigurationData);
+            loadDebug.migrationSucceeded = true;
+            loadDebug.versionDocumentExists = true;
+            currentVersion = 1;
+            usingDefaults = false;
+            legacyConfigurationData = null;
+            createVersionOneButton.hidden = true;
+            sourceMessage.textContent = "Core questions are not editable, if you need something changed please contact the app developer.";
+            liveQuestionsSnapshot = serializeQuestionsForPublish(questions);
+            if (currentVersion > 0) {
+                loadDebug.failureStage = "list-historical-versions";
+                loadDebug.historicalListAttempted = true;
+                await loadVersionHistory();
+            }
+            loadDebug.failureStage = "render-editor";
+            renderQuestionManager();
+            loadDebug.failureStage = null;
+            console.log("[Application Config Load Debug]", loadDebug);
+            managerMessage.textContent = "Version 1 was created from the legacy configuration.";
+        } catch (error) {
+            console.error("[Application Config Load Debug]", loadDebug, error);
+            managerMessage.textContent = "We couldn't create Version 1. The legacy configuration is unchanged and remains available in the editor.";
+            createVersionOneButton.disabled = false;
+        }
+    });
+
+    document.getElementById("addApplicationQuestionButton").addEventListener("click", () => {
+        const question = {
+            id: "",
+            label: "",
+            type: "shortText",
+            required: false,
+            active: true,
+            order: questions.length ? Math.max(...questions.map((item) => item.order)) + 10 : 10,
+            options: [],
+            requiresExplanationWhen: false,
+            explanationLabel: "Please explain.",
+            persisted: false,
+            idManuallyEdited: false
+        };
+        question.id = createUniqueQuestionId("New Question", question);
+        questions.push(question);
+        renderQuestionManager();
+        questionList.lastElementChild?.querySelector('[data-question-field="label"]')?.focus();
+    });
+
+    document.getElementById("previewApplicationQuestionsButton").addEventListener("click", () => renderPreview());
+
+    document.getElementById("closeApplicationQuestionsPreviewButton").addEventListener("click", () => {
+        preview.close();
+    });
+
+    document.getElementById("cancelDeleteApplicationQuestionButton").addEventListener("click", () => {
+        pendingDeleteQuestion = null;
+        deleteDialog.close();
+    });
+
+    document.getElementById("confirmDeleteApplicationQuestionButton").addEventListener("click", () => {
+        if (!pendingDeleteQuestion) return;
+        const deletedLabel = pendingDeleteQuestion.label || pendingDeleteQuestion.id;
+        questions = questions.filter((question) => question !== pendingDeleteQuestion);
+        pendingDeleteQuestion = null;
+        deleteDialog.close();
+        renderQuestionManager();
+        managerMessage.textContent = `“${deletedLabel}” was removed from the current configuration. Select Save Application Questions to publish this change.`;
+    });
+
+    deleteDialog.addEventListener("cancel", () => {
+        pendingDeleteQuestion = null;
+    });
+
+    saveQuestionsButton.addEventListener("click", async () => {
+        const errors = validateQuestions();
+        if (errors.length) {
+            managerMessage.textContent = errors.join(" ");
+            return;
+        }
+        await publishConfiguration(questions);
+    });
+
+    document.getElementById("closeApplicationVersionDetailButton").addEventListener("click", () => versionDetailDialog.close());
+
+    document.getElementById("cancelPublishApplicationVersionButton").addEventListener("click", () => {
+        publishDialog.close();
+        publishConfirmationResolver?.(false);
+        publishConfirmationResolver = null;
+    });
+
+    confirmPublishButton.addEventListener("click", () => {
+        publishDialog.close();
+        publishConfirmationResolver?.(true);
+        publishConfirmationResolver = null;
+    });
+
+    publishDialog.addEventListener("cancel", (event) => {
+        event.preventDefault();
+        publishDialog.close();
+        publishConfirmationResolver?.(false);
+        publishConfirmationResolver = null;
+    });
+
+    document.getElementById("previewHistoricalApplicationVersionButton").addEventListener("click", () => {
+        if (!selectedHistoricalVersion) return;
+        versionDetailDialog.close();
+        renderPreview(
+            normalizeApplicationQuestions(selectedHistoricalVersion.questions),
+            `Preview — Version ${selectedHistoricalVersion.version}`,
+            true
+        );
+    });
+
+    restoreVersionButton.addEventListener("click", async () => {
+        if (!selectedHistoricalVersion || selectedHistoricalVersion.version === currentVersion) return;
+        const nextVersion = currentVersion + 1;
+        const versionToRestore = selectedHistoricalVersion;
+        versionDetailDialog.close();
+        const confirmed = await requestPublishConfirmation(
+            `Restore Version ${versionToRestore.version}?`,
+            `Restoring Version ${versionToRestore.version} will create and publish a new Version ${nextVersion} using Version ${versionToRestore.version}'s question configuration. Existing historical versions will remain unchanged.${hasUnsavedChanges() ? " Any current unsaved editor changes will be discarded." : ""}`,
+            `Restore as Version ${nextVersion}`
+        );
+        if (!confirmed) {
+            openVersionDetail(versionToRestore);
+            return;
+        }
+        await publishConfiguration(
+            normalizeApplicationQuestions(versionToRestore.questions),
+            versionToRestore.version,
+            true
+        );
+    });
+
+    onAuthStateChanged(auth, async (authenticatedUser) => {
+        if (!authenticatedUser?.emailVerified) {
+            window.location.replace("login.html");
+            return;
+        }
+        let loadDebug = createLoadDebug();
+        try {
+            const authorization = await getAdminAuthorization(authenticatedUser);
+            loadDebug = createLoadDebug(authorization);
+            if (authorization.active !== true) {
+                window.location.replace("dashboard.html");
+                return;
+            }
+            settingsAdmin = authenticatedUser;
+            settingsAdminAuthorization = authorization;
+            loadDebug.failureStage = "read-current-pointer";
+            const [snapshot, loadedMembershipConfig] = await Promise.all([
+                getDoc(doc(db, "membershipApplicationConfig", "current")),
+                loadMembershipConfig()
+            ]);
+            loadDebug.currentDocumentExists = snapshot.exists();
+            previewMembershipConfig = loadedMembershipConfig;
+            let liveQuestions;
+            if (!snapshot.exists()) {
+                usingDefaults = true;
+                currentVersion = 0;
+                loadDebug.currentVersion = 0;
+                liveQuestions = normalizeApplicationQuestions();
+                sourceMessage.textContent = "Currently using the default application configuration.";
+            } else {
+                loadDebug.failureStage = "detect-legacy-config";
+                const currentData = snapshot.data();
+                loadDebug.currentVersion = Number.isInteger(currentData.currentVersion)
+                    ? currentData.currentVersion
+                    : null;
+                loadDebug.legacyQuestionsPresent = Array.isArray(currentData.questions);
+                loadDebug.migrationNeeded = loadDebug.legacyQuestionsPresent
+                    && !Number.isInteger(currentData.currentVersion);
+                if (loadDebug.migrationNeeded) {
+                    legacyConfigurationData = currentData;
+                    currentVersion = 0;
+                    liveQuestions = normalizeApplicationQuestions(currentData.questions);
+                    sourceMessage.textContent = "Legacy configuration detected";
+                    createVersionOneButton.hidden = false;
+                } else {
+                    currentVersion = currentData.currentVersion;
+                    loadDebug.failureStage = "read-current-version";
+                    loadDebug.versionDocumentPath = `membershipApplicationConfig/current/versions/${String(currentVersion)}`;
+                    const versionSnapshot = await getDoc(doc(
+                        db,
+                        "membershipApplicationConfig",
+                        "current",
+                        "versions",
+                        String(currentVersion)
+                    ));
+                    loadDebug.versionDocumentExists = versionSnapshot.exists();
+                    if (!versionSnapshot.exists()) throw new Error("The current application version snapshot is missing.");
+                    liveQuestions = normalizeApplicationQuestions(versionSnapshot.data().questions);
+                    sourceMessage.textContent = "Core questions are not editable, if you need something changed please contact the app developer.";
+                }
+                usingDefaults = false;
+            }
+            questions = liveQuestions.map((question) => ({...question, persisted: true}));
+            liveQuestionsSnapshot = currentVersion > 0 ? serializeQuestionsForPublish(questions) : [];
+            if (currentVersion > 0) {
+                loadDebug.failureStage = "list-historical-versions";
+                loadDebug.historicalListAttempted = true;
+                await loadVersionHistory();
+            }
+            if (currentVersion === 0) {
+                liveQuestions.forEach((question) => publishedQuestionIds.add(question.id));
+            }
+            loadDebug.failureStage = "render-editor";
+            renderQuestionManager();
+            applicationQuestionsManager.hidden = false;
+            accessMessage.textContent = "";
+            loadDebug.failureStage = null;
+            console.log("[Application Config Load Debug]", loadDebug);
+        } catch (error) {
+            console.error("[Application Config Load Debug]", loadDebug, error);
+            accessMessage.textContent = "We couldn't load application question settings.";
+        }
+    });
+}
+
+// ------------------------------------
 // Admin Dashboard
 // ------------------------------------
 
@@ -3188,6 +4184,11 @@ if (adminApplicationDetail) {
             ["Decline Reason (Admin-only)", applicationData.applicationStatus === "Declined" ? applicationData.declineReason : undefined],
             ["Revision Request", applicationData.applicationStatus === "Needs Revision" ? applicationData.revisionRequestMessage : undefined],
             ["Membership Year", membershipYear || "—"],
+            ["Application Form Version", Number.isInteger(applicationData.applicationVersion) && applicationData.applicationVersion > 0
+                ? applicationData.applicationVersion
+                : applicationData.applicationVersion === 0
+                    ? "Default / Unversioned"
+                    : "Legacy / Not Recorded"],
             ["Membership Type", applicationData.membershipType],
             ["Dues Amount at Submission", typeof applicationData.membershipDuesAmount === "number" ? `$${applicationData.membershipDuesAmount}` : "—"],
             ...(applicationData.membershipType === "Junior" ? [

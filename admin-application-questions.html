@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Application Questions - WBA Member Portal</title>
+    <link rel="stylesheet" href="style.css">
+    <link rel="manifest" href="manifest.json">
+</head>
+<body>
+    <header class="app-header">
+        <img src="images/wba-icon.png" alt="Working Beauceron Association" class="app-logo">
+        <h1>Application Question Management</h1>
+    </header>
+    <nav class="member-nav" aria-label="Admin navigation">
+        <a href="dashboard.html">Member Dashboard</a>
+        <a href="admin.html">Admin Dashboard</a>
+        <a href="admin-settings.html">Settings</a>
+        <a href="admin-application-questions.html" aria-current="page">Application Questions</a>
+        <button type="button" id="logoutButton">Log Out</button>
+    </nav>
+    <main class="app-content admin-page">
+        <p id="applicationQuestionsAccessMessage" class="profile-muted" role="status">Verifying administrator access...</p>
+        <section id="applicationQuestionsManager" hidden>
+            <div class="admin-page-heading">
+                <p class="dashboard-eyebrow">Admin Settings</p>
+                <h2>Membership Application Questions</h2>
+                <p>This page controls additional application questions.</p>
+            </div>
+            <div class="settings-notice">
+                <strong id="applicationQuestionsSourceMessage" role="status"></strong>
+                <p id="applicationQuestionsLiveHelp">The application questions currently used by applicants are shown below. Changes made on this page will not go live until you save a new version.</p>
+                <button type="button" id="createApplicationVersionOneButton" hidden>Create Version 1</button>
+            </div>
+            <div class="settings-toolbar">
+                <button type="button" id="addApplicationQuestionButton" class="button-secondary">Add Question</button>
+                <button type="button" id="previewApplicationQuestionsButton" class="button-secondary">Preview Proposed Version</button>
+            </div>
+            <div id="applicationQuestionList" class="question-manager-list"></div>
+            <div class="settings-save-panel">
+                <div>
+                    <strong id="applicationQuestionsVersionPlan"></strong>
+                    <p id="applicationQuestionsDirtyState" class="profile-muted">No unsaved changes.</p>
+                    <p class="profile-muted">Changes affect new and editable applications. Submitted applications retain their historical form version and question responses.</p>
+                </div>
+                <button type="button" id="saveApplicationQuestionsButton" disabled>Save &amp; Publish Version 1</button>
+                <p id="applicationQuestionsMessage" class="profile-muted" role="status"></p>
+            </div>
+            <section class="settings-version-history" aria-labelledby="applicationVersionHistoryHeading">
+                <h3 id="applicationVersionHistoryHeading">Previous Versions</h3>
+                <div id="applicationVersionHistoryList"></div>
+            </section>
+        </section>
+    </main>
+    <dialog id="applicationQuestionsPreview" class="application-preview-dialog" aria-labelledby="applicationQuestionsPreviewHeading">
+        <div class="application-preview-heading">
+            <div>
+                <p class="dashboard-eyebrow">Visual preview only</p>
+                <h2 id="applicationQuestionsPreviewHeading">Membership Application Preview</h2>
+            </div>
+            <button type="button" id="closeApplicationQuestionsPreviewButton" class="button-secondary">Close</button>
+        </div>
+        <p id="applicationPreviewNotice" class="settings-notice">Core questions like name, address, and birthdate will display first followed by the below questions.</p>
+        <div id="applicationQuestionsPreviewContent" class="application-preview-content"></div>
+    </dialog>
+    <dialog id="deleteApplicationQuestionDialog" class="admin-confirm-dialog" aria-labelledby="deleteApplicationQuestionHeading">
+        <h2 id="deleteApplicationQuestionHeading">Delete this application question?</h2>
+        <p>This will remove the question from future and editable applications. It will not remove the question or answers from previously submitted applications.</p>
+        <p id="deleteApplicationQuestionName" class="profile-muted"></p>
+        <div class="admin-confirm-actions">
+            <button type="button" id="cancelDeleteApplicationQuestionButton" class="button-secondary">Cancel</button>
+            <button type="button" id="confirmDeleteApplicationQuestionButton" class="button-danger">Delete Question</button>
+        </div>
+    </dialog>
+    <dialog id="applicationVersionDetailDialog" class="application-preview-dialog" aria-labelledby="applicationVersionDetailHeading">
+        <div class="application-preview-heading">
+            <div>
+                <p class="dashboard-eyebrow">Published configuration</p>
+                <h2 id="applicationVersionDetailHeading">Application Version</h2>
+                <p id="applicationVersionDetailMetadata" class="profile-muted"></p>
+            </div>
+            <button type="button" id="closeApplicationVersionDetailButton" class="button-secondary">Close</button>
+        </div>
+        <div class="version-detail-actions">
+            <button type="button" id="previewHistoricalApplicationVersionButton" class="button-secondary">Preview Full Application</button>
+            <button type="button" id="restoreApplicationVersionButton">Restore This Version</button>
+        </div>
+        <div id="applicationVersionQuestionList" class="version-question-list"></div>
+    </dialog>
+    <dialog id="publishApplicationVersionDialog" class="admin-confirm-dialog" aria-labelledby="publishApplicationVersionHeading">
+        <h2 id="publishApplicationVersionHeading">Publish Application Version</h2>
+        <p id="publishApplicationVersionMessage"></p>
+        <div class="admin-confirm-actions">
+            <button type="button" id="cancelPublishApplicationVersionButton" class="button-secondary">Cancel</button>
+            <button type="button" id="confirmPublishApplicationVersionButton">Publish Version</button>
+        </div>
+    </dialog>
+    <script type="module" src="app.js"></script>
+</body>
+</html>

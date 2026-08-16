@@ -222,7 +222,7 @@ service cloud.firestore {
 
     function applicationKeysOnly() {
       return request.resource.data.keys().hasOnly([
-        'applicantUid', 'applicationStatus', 'membershipYear', 'dateOfBirth',
+        'applicantUid', 'applicationStatus', 'membershipYear', 'applicationVersion', 'dateOfBirth',
         'firstName', 'lastName', 'preferredName', 'email', 'phone',
         'address', 'city', 'state', 'zip', 'country',
         'countryCode', 'countryName', 'subdivisionCode', 'subdivisionName',
@@ -271,6 +271,7 @@ service cloud.firestore {
         && request.resource.data.email == request.auth.token.email
         && request.resource.data.membershipType in ['', 'Individual', 'Joint', 'Junior', 'Foreign']
         && request.resource.data.membershipYear is int
+        && request.resource.data.get('applicationVersion', 0) is int
         && (request.resource.data.membershipDuesAmount == null
           || request.resource.data.membershipDuesAmount is number)
         && request.resource.data.dateOfBirth is string
@@ -810,23 +811,64 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    function validMembershipApplicationConfig() {
+    function validMembershipApplicationConfigPointer(configId) {
       return request.resource.data.keys().hasOnly([
-          'questions', 'updatedAt', 'updatedBy'
+          'currentVersion', 'updatedAt', 'updatedBy'
         ])
-        && request.resource.data.keys().hasAll(['questions'])
+        && request.resource.data.keys().hasAll(['currentVersion', 'updatedAt', 'updatedBy'])
+        && request.resource.data.currentVersion is int
+        && request.resource.data.currentVersion > 0
+        && request.resource.data.updatedAt is string
+        && request.resource.data.updatedBy == request.auth.uid
+        && ((!exists(/databases/$(database)/documents/membershipApplicationConfig/$(configId))
+            && request.resource.data.currentVersion == 1)
+          || (exists(/databases/$(database)/documents/membershipApplicationConfig/$(configId))
+            && request.resource.data.currentVersion
+              == resource.data.get('currentVersion', 0) + 1))
+        && existsAfter(/databases/$(database)/documents/membershipApplicationConfig/$(configId)/versions/$(request.resource.data.currentVersion))
+        && getAfter(/databases/$(database)/documents/membershipApplicationConfig/$(configId)/versions/$(request.resource.data.currentVersion)).data.version
+          == request.resource.data.currentVersion;
+    }
+
+    function validMembershipApplicationConfigVersion(configId) {
+      return request.resource.data.keys().hasOnly([
+          'version', 'questions', 'createdAt', 'createdBy', 'restoredFromVersion'
+        ])
+        && request.resource.data.keys().hasAll([
+          'version', 'questions', 'createdAt', 'createdBy'
+        ])
+        && request.resource.data.version is int
+        && request.resource.data.version > 0
         && request.resource.data.questions is list
-        && (request.resource.data.get('updatedAt', null) == null
-          || request.resource.data.updatedAt is string)
-        && request.resource.data.get('updatedBy', request.auth.uid) == request.auth.uid;
+        && request.resource.data.createdAt is string
+        && request.resource.data.createdBy == request.auth.uid
+        && (request.resource.data.get('restoredFromVersion', null) == null
+          || (request.resource.data.restoredFromVersion is int
+            && request.resource.data.restoredFromVersion > 0
+            && request.resource.data.restoredFromVersion < request.resource.data.version))
+        && getAfter(/databases/$(database)/documents/membershipApplicationConfig/$(configId)).data.currentVersion
+          == request.resource.data.version;
     }
 
     match /membershipApplicationConfig/{configId} {
       allow read: if signedIn() && configId == 'current';
       allow create, update: if configId == 'current'
         && isAdmin()
-        && validMembershipApplicationConfig();
+        && validMembershipApplicationConfigPointer(configId);
       allow delete: if false;
+
+      match /versions/{versionId} {
+        allow get: if signedIn()
+          && configId == 'current'
+          && (isAdmin()
+            || get(/databases/$(database)/documents/membershipApplicationConfig/$(configId)).data.currentVersion
+              == resource.data.version);
+        allow list: if isAdmin() && configId == 'current';
+        allow create: if isAdmin()
+          && configId == 'current'
+          && validMembershipApplicationConfigVersion(configId);
+        allow update, delete: if false;
+      }
     }
   }
 }

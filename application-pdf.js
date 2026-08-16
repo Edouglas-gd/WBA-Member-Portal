@@ -158,6 +158,11 @@ export const generateMembershipApplicationPdf = async (
     addSection("Membership Information", [
         ["Membership Type", applicationData.membershipType],
         ["Membership Year", applicationData.membershipYear],
+        ["Application Form Version", Number.isInteger(applicationData.applicationVersion) && applicationData.applicationVersion > 0
+            ? applicationData.applicationVersion
+            : applicationData.applicationVersion === 0
+                ? "Default / Unversioned"
+                : "Legacy / Not Recorded"],
         ["Dues Amount", typeof applicationData.membershipDuesAmount === "number"
             ? `$${applicationData.membershipDuesAmount}`
             : "Not Provided"],
